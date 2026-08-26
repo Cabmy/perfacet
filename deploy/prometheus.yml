@@ -1,0 +1,14 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: twigrpc-servers
+    static_configs:
+      - targets:
+          - server1:9100
+          - server2:9100
+          - server3:9100
+  - job_name: registry
+    static_configs:
+      - targets: []
+        # registry 如启用 admin 端口则加入 registry:9100

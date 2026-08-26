@@ -1,0 +1,8 @@
+// echo.proto —— gRPC 对照基准（T48）：与 TwigRPC math.Echo 同语义
+syntax = "proto3";
+package echo;
+
+message EchoRequest { string msg = 1; int32 repeat = 2; }
+message EchoReply   { string msg = 1; }
+
+service Echo { rpc Echo(EchoRequest) returns (EchoReply); }

@@ -1,0 +1,12 @@
+syntax = "proto3";
+import "rpc.proto";
+package twigrpc;
+
+message RegisterRequest {
+  Instance instance = 1;
+}
+
+message RegisterResponse {
+  bool ok = 1;
+  uint64 version = 2;
+}

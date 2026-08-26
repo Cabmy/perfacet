@@ -1,0 +1,72 @@
+{
+  "title": "TwigRPC Server",
+  "uid": "twigrpc-server",
+  "tags": ["twigrpc"],
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "QPS (by method)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(twigrpc_server_requests_total[30s])) by (method)",
+          "legendFormat": "{{method}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "P99 Latency (us)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(twigrpc_server_latency_us_bucket[30s])) by (le, instance))",
+          "legendFormat": "{{instance}} p99"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "In-flight",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "twigrpc_server_in_flight",
+          "legendFormat": "{{instance}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Ready instances",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum(twigrpc_server_ready)",
+          "legendFormat": "ready"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Requests by status",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum(rate(twigrpc_server_requests_total[30s])) by (status)",
+          "legendFormat": "{{status}}"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 2
+}
