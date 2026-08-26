@@ -1,6 +1,8 @@
 #pragma once
-// netlib::TcpServer —— 连接集合管理 + 多 Reactor 分发。
-// 主 loop 只跑 Acceptor；每条连接归属一个 sub loop（连接 map 按 reactor 分片持有，免全局锁）。
+// netlib::TcpServer —— 连接集合管理。
+// ioThreads > 0：主 loop 只跑 Acceptor，连接按 round-robin 分到 sub reactor
+//               （连接 map 按 reactor 分片持有，免全局锁）。
+// ioThreads == 0：全部连接跑在 mainLoop（Perfacet M1：Call/InFlight 与 HTTP 同环）。
 #include <atomic>
 #include <functional>
 #include <map>
@@ -17,9 +19,9 @@ namespace netlib {
 
 class TcpServer {
 public:
-    // ioThreads: sub reactor 数量（不含主 loop）。
-    // 字节流服务器：监听地址可为 TCP 或 UDS Endpoint（类名保持 Tcp*，避免无意义全库改名）
-    TcpServer(EventLoop* mainLoop, const Endpoint& listenAddr, int ioThreads = 2);
+    // ioThreads: sub reactor 数量。0 = 只用 mainLoop，不建 sub loop。
+    // 监听地址可为 TCP 或 UDS Endpoint（类名保持 Tcp*）。
+    TcpServer(EventLoop* mainLoop, const Endpoint& listenAddr, int ioThreads = 0);
     ~TcpServer();
 
     TcpServer(const TcpServer&) = delete;
@@ -28,8 +30,8 @@ public:
     void setMessageCb(TcpConnection::MsgCb cb) { msgCb_ = std::move(cb); }
     void setConnCb(TcpConnection::ConnCb cb) { connCb_ = std::move(cb); }
 
-    void start(); // 启动 sub loop 线程 + 开始 accept（必须先于 mainLoop 运行调用）
-    void stop();  // 优雅停机：quit 所有 loop + join
+    void start(); // ioThreads>0 时启动 sub loop；必须先于 mainLoop::loop 调用
+    void stop();  // 关连接；有 sub loop 则 quit+join
     // 遍历所有活跃连接：cb 在各连接所属 IO 线程执行（可安全 send），
     // 全部分片遍历完成后才返回（阻塞调用线程）。只做遍历，不 close。
     void forEachConnection(const std::function<void(const TcpConnectionPtr&)>& cb);
@@ -42,10 +44,11 @@ private:
     EventLoop* mainLoop_;
     Endpoint listenAddr_;
     Acceptor acceptor_;
+    int ioThreads_ = 0; // 0 = 单 loop
 
     std::vector<std::unique_ptr<EventLoop>> subLoops_;
     std::vector<std::thread> subThreads_;
-    // 连接表按 reactor 分片：connsByLoop_[i] 的插入与删除都只在 subLoops_[i] 线程执行
+    // 连接表按 reactor 分片。单 loop 时仅 [0]，读写必须在 mainLoop 线程。
     std::vector<std::map<int, TcpConnectionPtr>> connsByLoop_;
     size_t nextLoop_ = 0;
 

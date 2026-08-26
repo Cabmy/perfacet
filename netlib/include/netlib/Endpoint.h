@@ -40,7 +40,7 @@ private:
     std::string path_;
 };
 
-// 主机名 → IPv4 字符串（已是合法 IP 则原样返回；容器内 registry 为 DNS 名）
+// 主机名 → IPv4 字符串（已是合法 IP 则原样返回）
 inline std::string resolveHost(const std::string& host) {
     struct in_addr a;
     if (inet_pton(AF_INET, host.c_str(), &a) == 1) return host;

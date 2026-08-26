@@ -1,0 +1,42 @@
+listen: "0.0.0.0:8741"
+workers: 4
+
+access:
+  levels: [default]
+
+agents:
+  cursor:      { token: "pf_cursor" }
+  claude-code: { token: "pf_claude" }
+
+backends:
+  - name: echo
+    url: "http://127.0.0.1:9001/mcp"
+
+health:
+  interval_ms: 5000
+  degraded_latency_ms: 1000
+  down_after_failures: 3
+
+circuit:
+  open_after: 5
+  cooldown_ms: 30000
+  half_open_probes: 1
+
+governor:
+  default:
+    per_tool_concurrency: 4
+    per_principal_concurrency: 10
+    queue_wait_ms: 5000
+    rate_per_sec: 20
+
+tasks:
+  promote_after_ms: 2000
+  ttl_ms: 3600000
+
+otel:
+  endpoint: "http://127.0.0.1:4318/v1/traces"
+  service_name: perfacet
+  queue_max: 1024
+
+audit:
+  path: "audit.jsonl"

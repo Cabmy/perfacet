@@ -2,23 +2,24 @@
 build/
 build-*/
 *.o
-benchmark/grpc_echo/gen/   # protoc 生成代码
 core
 core.*
-Testing/                   # 在仓库根误跑 ctest 留下的目录
+Testing/
+compile_commands.json
 
-# ---- Python 缓存 ----
+# ---- 运行时产物（demo / serve）----
+grants.jsonl
+audit.jsonl
+*.jsonl
+
+# ---- Python / uv ----
 __pycache__/
 *.pyc
 .venv/
 .pytest_cache/
 
-# ---- 内部测试----
-test/
-docs/
-
-# ---- 内部调试脚本 ----
-scripts/
+# ---- 第三方源码缓存（CMake FetchContent）----
+third_party/_fetch/
 
 # ---- 本地配置 ----
 .env

@@ -1,0 +1,77 @@
+listen: "0.0.0.0:8741"
+workers: 4
+grants_path: "grants.jsonl"
+grant_refresh_ms: 100
+list_ttl_ms: 5000
+
+access:
+  levels: [intern, engineer, finance-admin]
+  elevation:
+    max_level: engineer
+    ttl_ms: 900000
+
+agents:
+  cursor:       { token: "pf_cursor_intern", level: intern }
+  claude-code:  { token: "pf_claude_eng",    level: engineer }
+  research-bot: { token: "pf_researcher",    level: intern }
+  intern-bot:   { token: "pf_intern_bot",    level: intern }
+  ops-admin:    { token: "pf_admin",         admin: true }
+
+backends:
+  - name: postgres
+    url: "http://127.0.0.1:9002/mcp"
+    level: intern
+    idempotent_tools: [explain]
+  - name: github
+    url: "http://127.0.0.1:9003/mcp"
+    level: engineer
+  - name: payroll
+    url: "http://127.0.0.1:9004/mcp"
+    level: finance-admin
+    secret: true
+  - name: flaky
+    url: "http://127.0.0.1:9005/mcp"
+    level: intern
+  - name: slow
+    url: "http://127.0.0.1:9006/mcp"
+    level: intern
+
+health:
+  interval_ms: 5000
+  degraded_latency_ms: 1000
+  down_after_failures: 3
+
+circuit:
+  open_after: 5
+  cooldown_ms: 30000
+  half_open_probes: 1
+
+retry:
+  max_attempts: 2
+  retryable: [Timeout, Unavailable, Upstream]
+  never: [Authz, Cancelled, Protocol, Throttled, Capability]
+
+governor:
+  default:
+    per_tool_concurrency: 4
+    per_principal_concurrency: 10
+    queue_wait_ms: 5000
+    rate_per_sec: 20
+  tools:
+    postgres__query:
+      max_concurrency: 3
+      queue_wait_ms: 8000
+    github__search:
+      max_concurrency: 2
+
+tasks:
+  promote_after_ms: 2000
+  ttl_ms: 3600000
+
+otel:
+  endpoint: "http://127.0.0.1:4318/v1/traces"
+  service_name: perfacet
+  queue_max: 1024
+
+audit:
+  path: "audit.jsonl"

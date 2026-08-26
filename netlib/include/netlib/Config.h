@@ -1,6 +1,5 @@
 #pragma once
 // netlib 层全局配置：所有可调参数集中于此，禁止散落魔法数字。
-// 可被 TWIGRPC_* 环境变量覆盖的逻辑在各使用点读取。
 
 namespace config {
 

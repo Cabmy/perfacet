@@ -45,7 +45,7 @@ public:
     void setConnCb(ConnCb cb) { connCb_ = std::move(cb); }
     void setMsgCb(MsgCb cb) { msgCb_ = std::move(cb); }
     void setWriteCompleteCb(WriteCompleteCb cb) { writeCompleteCb_ = std::move(cb); }
-    void setCloseCb(CloseCb cb) { closeCb_ = std::move(cb); } // 供 TcpServer/TcpClient 注入
+    void setCloseCb(CloseCb cb) { closeCb_ = std::move(cb); } // 供 TcpServer 注入
 
     void setContext(std::any ctx) {
         std::lock_guard<std::mutex> lk(ctxMtx_);

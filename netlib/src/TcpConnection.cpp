@@ -165,7 +165,7 @@ void TcpConnection::handleClose() {
     // 关闭顺序固定（不许改）：
     // 1) 先 disableAll 并把 Channel 回调摘除，防止 closeCb 执行期间事件再进来；
     // 2) 再标记断开；
-    // 3) 回调 closeCb_（由 TcpServer/TcpClient 摘除连接、释放 shared_ptr）；
+    // 3) 回调 closeCb_（由 TcpServer 摘除连接、释放 shared_ptr）；
     // 4) fd 由 Socket 析构关闭，对象随后释放。
     ch_->disableAll();
     ch_->remove();
