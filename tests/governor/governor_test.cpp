@@ -1,3 +1,4 @@
+#include "helpers.h"
 #include "perfacet/govern/LocalGovernor.h"
 #include "perfacet/observe/Counters.h"
 #include "perfacet/policy/YamlConfig.h"
@@ -38,9 +39,7 @@ TEST_CASE("4 抢 3 FIFO 与 Permit 析构归还") {
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
     Counters counters;
     LocalGovernor gov(cfg, &loop, &counters);
-    Principal who;
-    who.agentId = "bot";
-    who.hasLevel = true;
+    Principal who = perfacet::test::testWho("bot");
     ToolKey key{"pg", "query"};
 
     std::vector<Governor::Permit> held;

@@ -408,14 +408,13 @@ void HttpMcp::onMessage(const netlib::TcpConnectionPtr& conn, netlib::Buffer& bu
     }
     who->grantBump = grants_->effectiveBump(who->agentId, nowMs());
 
-    ir::Request req;
+    ir::Request req{std::move(*who)};
     req.method = method;
     req.name = name;
     req.upstreamId = id.dump();
     req.idJson = id;
     req.params = params;
     req.meta = meta;
-    req.who = *who;
     req.deadlineMs = nowMs() + 60000;
     if (meta.contains(ir::kMetaCaps) && meta[ir::kMetaCaps].is_object()) {
         auto caps = meta[ir::kMetaCaps];

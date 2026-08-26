@@ -10,6 +10,7 @@
 #include <mutex>
 #include <queue>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -69,6 +70,7 @@ private:
     void flushAll();
     void handleWakeup();
     void handleTimerExpired();
+    void processExpiredTimers();
     void resetTimerfd();
     void insertTimer(Timer t);
     void cancelInLoop(TimerId id);
@@ -84,6 +86,7 @@ private:
     };
     std::priority_queue<Timer, std::vector<Timer>, TimerCmp> timers_;
     std::unordered_set<uint64_t> canceled_;
+    std::unordered_map<uint64_t, std::function<void()>> timerCbs_;
     std::atomic<uint64_t> nextTimerId_{1};
 
     std::vector<std::function<void()>> pending_;

@@ -2,13 +2,43 @@
 #include "perfacet/backend/Backend.h"
 #include "perfacet/govern/Governor.h"
 #include "perfacet/health/Health.h"
+#include "perfacet/ir/Request.h"
 #include "perfacet/observe/Tracer.h"
 
 #include <atomic>
 #include <functional>
+#include <mutex>
 #include <string>
+#include <vector>
+
+namespace perfacet::ir {
+
+struct PrincipalForge {
+    static Principal make(std::string agentId, Rank level = 0, bool hasLevel = true,
+                          bool admin = false, std::string levelName = {},
+                          Rank grantBump = 0) {
+        Principal p;
+        p.agentId = std::move(agentId);
+        p.level = level;
+        p.hasLevel = hasLevel;
+        p.admin = admin;
+        p.levelName = std::move(levelName);
+        p.grantBump = grantBump;
+        return p;
+    }
+};
+
+} // namespace perfacet::ir
 
 namespace perfacet::test {
+
+inline ir::Principal testWho(std::string id, ir::Rank level = 0, bool hasLevel = true,
+                             bool admin = false, std::string levelName = {}) {
+    return ir::PrincipalForge::make(std::move(id), level, hasLevel, admin,
+                                    std::move(levelName));
+}
+
+inline ir::Request testReq(ir::Principal who) { return ir::Request{std::move(who)}; }
 
 class NullTracer : public Tracer {
 public:
@@ -54,6 +84,33 @@ public:
 
 protected:
     void releaseSlot(const ir::ToolKey&, std::string_view) override {}
+};
+
+class HoldingBackend : public Backend {
+public:
+    void call(const ir::BackendCall&, std::function<void(ir::Response)> cb) override {
+        std::lock_guard<std::mutex> lk(mu_);
+        pending_.push_back(std::move(cb));
+    }
+    std::size_t pending() const {
+        std::lock_guard<std::mutex> lk(mu_);
+        return pending_.size();
+    }
+    void flushOk() {
+        std::vector<std::function<void(ir::Response)>> cbs;
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            cbs.swap(pending_);
+        }
+        ir::Response r;
+        r.klass = ir::FailureClass::Ok;
+        r.body = ir::callToolText("ok", false);
+        for (auto& cb : cbs) cb(r);
+    }
+
+private:
+    mutable std::mutex mu_;
+    std::vector<std::function<void(ir::Response)>> pending_;
 };
 
 } // namespace perfacet::test

@@ -62,12 +62,7 @@ void LocalGovernor::acquire(const ir::Principal& who, const ir::ToolKey& key,
         onAdmit(Admit::Reject, Permit{});
         return;
     }
-    Waiter w;
-    w.who = who;
-    w.key = key;
-    w.deadlineMs = deadline;
-    w.cb = std::move(onAdmit);
-    w.id = nextWaitId_++;
+    Waiter w{who, key, deadline, 0, std::move(onAdmit), nextWaitId_++};
     const double waitSec = static_cast<double>(deadline - now) / 1000.0;
     const uint64_t id = w.id;
     w.timer = loop_->runAfter(waitSec, [this, ts, id]() {

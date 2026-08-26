@@ -33,6 +33,14 @@ ctest --test-dir build --output-on-failure
 bash examples/demo.sh
 ```
 
+压测（附加延迟看 in-process 的 `gatewayMs − upstreamMs`；吞吐走本机 HTTP）：
+
+```bash
+bash bench/run.sh
+```
+
+数字记在 [`bench/README.md`](bench/README.md)。
+
 ## 对 agent
 
 客户端必须会 `2026-07-28`。不会该版本的不接。

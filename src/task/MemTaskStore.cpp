@@ -2,7 +2,7 @@
 
 namespace perfacet {
 
-void MemTaskStore::insert(Task t) { byId_[t.taskId] = std::move(t); }
+void MemTaskStore::insert(Task t) { byId_.insert_or_assign(t.taskId, std::move(t)); }
 
 std::optional<Task> MemTaskStore::get(std::string_view id) const {
     auto it = byId_.find(std::string(id));

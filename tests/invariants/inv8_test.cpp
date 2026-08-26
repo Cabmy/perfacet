@@ -62,13 +62,9 @@ TEST_CASE("不变量8 Policy Deny 不进 Governor/InFlight/Backend") {
                                  &catalog, &index, &facet, &tasks, &tracer, &audit,
                                  &counters, &retry, &grants, &cfg});
 
-    ir::Request req;
+    ir::Request req = testReq(testWho("bot", 0, true, false, "l0"));
     req.method = "tools/call";
     req.name = "pay__x";
-    req.who.agentId = "bot";
-    req.who.hasLevel = true;
-    req.who.level = 0;
-    req.who.levelName = "l0";
     req.deadlineMs = nowMs() + 5000;
     req.trace.traceId = "abc123";
     req.params = ir::Json{{"name", "pay__x"}, {"arguments", ir::Json::object()}};

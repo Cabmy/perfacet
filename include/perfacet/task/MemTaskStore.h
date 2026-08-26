@@ -19,6 +19,8 @@ struct Task {
     uint64_t lastUpdatedAtMs = 0;
     uint64_t ttlMs = 0;
     ir::Principal owner;
+
+    explicit Task(ir::Principal o) : owner(std::move(o)) {}
 };
 
 class MemTaskStore {

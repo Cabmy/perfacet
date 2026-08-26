@@ -7,6 +7,7 @@ find_package(Threads REQUIRED)
 add_compile_options(-Wall -Wextra -g)
 
 option(PERFACET_BUILD_TESTS "构建 doctest 套件" ON)
+option(PERFACET_BUILD_BENCH "构建 bench 可执行文件" ON)
 
 include(FetchContent)
 set(FETCHCONTENT_BASE_DIR "${CMAKE_SOURCE_DIR}/third_party/_fetch")
@@ -57,44 +58,82 @@ endif()
 
 add_subdirectory(netlib)
 
-file(GLOB_RECURSE PERFACET_SRC CONFIGURE_DEPENDS
-  src/ir/*.cpp
-  src/pipeline/*.cpp
-  src/catalog/*.cpp
-  src/govern/*.cpp
-  src/policy/*.cpp
-  src/health/*.cpp
-  src/backend/*.cpp
-  src/task/*.cpp
-  src/observe/*.cpp
-  src/frontend/*.cpp
-  src/audit/*.cpp
-  src/cli/*.cpp
-  src/detail/*.cpp)
-list(FILTER PERFACET_SRC EXCLUDE REGEX "src/cli/main.cpp$")
-
-add_library(perfacet_core STATIC ${PERFACET_SRC})
-target_include_directories(perfacet_core PUBLIC
-  ${CMAKE_SOURCE_DIR}/include
-  ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(perfacet_core PUBLIC
-  netlib
-  nlohmann_json::nlohmann_json
-  yaml-cpp::yaml-cpp
-  httplib::httplib
-  CLI11::CLI11
-  Threads::Threads)
-# llhttp 目标名随版本可能是 llhttp_static / llhttp
 if(TARGET llhttp_static)
-  target_link_libraries(perfacet_core PUBLIC llhttp_static)
+  set(PERFACET_LLHTTP llhttp_static)
 elseif(TARGET llhttp)
-  target_link_libraries(perfacet_core PUBLIC llhttp)
+  set(PERFACET_LLHTTP llhttp)
 else()
   message(FATAL_ERROR "llhttp target not found")
 endif()
 
+# ---- P1：每层独立 target；pipeline PRIVATE 不链 frontend ----
+function(perfacet_lib name)
+  add_library(${name} STATIC ${ARGN})
+  target_include_directories(${name} PUBLIC ${CMAKE_SOURCE_DIR}/include)
+  target_include_directories(${name} PRIVATE ${CMAKE_SOURCE_DIR}/src)
+  target_compile_features(${name} PUBLIC cxx_std_17)
+endfunction()
+
+perfacet_lib(perfacet_ir src/ir/ToolKey.cpp src/ir/classify.cpp)
+target_link_libraries(perfacet_ir PUBLIC nlohmann_json::nlohmann_json)
+
+perfacet_lib(perfacet_detail src/detail/Random.cpp)
+target_include_directories(perfacet_detail PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(perfacet_detail PUBLIC perfacet_ir)
+
+perfacet_lib(perfacet_policy
+  src/policy/Taxonomy.cpp
+  src/policy/YamlConfig.cpp
+  src/policy/YamlIdentityStore.cpp
+  src/policy/JsonlGrantStore.cpp)
+target_link_libraries(perfacet_policy PUBLIC perfacet_ir perfacet_detail yaml-cpp::yaml-cpp)
+
+perfacet_lib(perfacet_backend src/backend/HttpMcpBackend.cpp)
+target_link_libraries(perfacet_backend PUBLIC perfacet_ir perfacet_detail netlib httplib::httplib Threads::Threads)
+
+# RankPolicy 认 Catalog：源文件跟 catalog 编进同一 target，避免 policy↔catalog 静态库环
+perfacet_lib(perfacet_catalog
+  src/catalog/Catalog.cpp
+  src/catalog/ToolIndex.cpp
+  src/catalog/FacetView.cpp
+  src/catalog/IndexRefresher.cpp
+  src/policy/RankPolicy.cpp)
+target_link_libraries(perfacet_catalog PUBLIC perfacet_backend perfacet_policy)
+
+perfacet_lib(perfacet_observe src/observe/OtlpHttpJsonTracer.cpp)
+target_link_libraries(perfacet_observe PUBLIC perfacet_ir perfacet_detail perfacet_policy netlib httplib::httplib)
+
+perfacet_lib(perfacet_audit src/audit/JsonlAuditLog.cpp)
+target_link_libraries(perfacet_audit PUBLIC perfacet_ir perfacet_detail netlib)
+
+perfacet_lib(perfacet_govern src/govern/Governor.cpp src/govern/LocalGovernor.cpp)
+target_link_libraries(perfacet_govern PUBLIC perfacet_ir perfacet_detail perfacet_policy perfacet_observe netlib)
+
+perfacet_lib(perfacet_health
+  src/health/Health.cpp
+  src/health/CountCircuit.cpp
+  src/health/RetryPolicy.cpp
+  src/health/ProbeHealth.cpp)
+target_link_libraries(perfacet_health PUBLIC perfacet_ir perfacet_detail perfacet_policy perfacet_catalog netlib)
+
+perfacet_lib(perfacet_task src/task/MemTaskStore.cpp)
+target_link_libraries(perfacet_task PUBLIC perfacet_ir)
+
+perfacet_lib(perfacet_pipeline src/pipeline/Pipeline.cpp src/pipeline/InFlight.cpp)
+target_link_libraries(perfacet_pipeline PUBLIC
+  perfacet_ir perfacet_detail perfacet_policy perfacet_catalog perfacet_backend
+  perfacet_govern perfacet_health perfacet_task perfacet_observe perfacet_audit netlib)
+# 故意不链 perfacet_frontend
+
+perfacet_lib(perfacet_frontend src/frontend/HttpMcp.cpp)
+target_link_libraries(perfacet_frontend PUBLIC perfacet_pipeline perfacet_health perfacet_govern netlib)
+target_link_libraries(perfacet_frontend PUBLIC ${PERFACET_LLHTTP})
+
+perfacet_lib(perfacet_cli src/cli/Gateway.cpp src/cli/Cli.cpp)
+target_link_libraries(perfacet_cli PUBLIC perfacet_frontend perfacet_observe CLI11::CLI11 httplib::httplib)
+
 add_executable(perfacet src/cli/main.cpp)
-target_link_libraries(perfacet PRIVATE perfacet_core)
+target_link_libraries(perfacet PRIVATE perfacet_cli)
 
 add_custom_target(check_layers
   COMMAND ${CMAKE_SOURCE_DIR}/scripts/check_layers.sh
@@ -105,4 +144,8 @@ add_dependencies(perfacet check_layers)
 if(PERFACET_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
+endif()
+
+if(PERFACET_BUILD_BENCH)
+  add_subdirectory(bench)
 endif()

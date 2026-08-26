@@ -60,13 +60,9 @@ TEST_CASE("不变量10 Deny 审计含 trace_id 且无 token") {
                                  &catalog, &index, &facet, &tasks, &tracer, &audit,
                                  &counters, &retry, &grants, &cfg});
 
-    ir::Request req;
+    ir::Request req = testReq(testWho("bot", 0, true, false, "l0"));
     req.method = "tools/call";
     req.name = "pay__x";
-    req.who.agentId = "bot";
-    req.who.hasLevel = true;
-    req.who.level = 0;
-    req.who.levelName = "l0";
     req.trace.traceId = "deadbeefcafebabe";
     req.deadlineMs = nowMs() + 1000;
 

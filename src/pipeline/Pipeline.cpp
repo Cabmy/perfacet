@@ -278,7 +278,7 @@ void Pipeline::handleCall(ir::Request req, std::function<void(ir::Response)> onD
             if (req.caps.tasks) {
                 std::string tid = hit->taskId.value_or("");
                 if (tid.empty()) {
-                    Task t;
+                    Task t{req.who};
                     t.taskId = "tsk_" + randomHex(8);
                     t.agentId = req.who.agentId;
                     t.key = *key;
@@ -438,7 +438,7 @@ void Call::armPromote() {
 void Call::onPromote() {
     if (responded_ || cancelled_) return;
     if (req_.caps.tasks) {
-        Task t;
+        Task t{req_.who};
         t.taskId = "tsk_" + randomHex(8);
         t.agentId = req_.who.agentId;
         t.key = key_;

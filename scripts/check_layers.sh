@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 分层与语义约束。失效条件：下游自带鉴权头落地时，改为禁止 agent 侧 token、
-# 允许 backend 侧下游凭据。
+# 分层与语义约束。P1 CMake 每层独立 target，pipeline 不链 frontend（见根 CMakeLists）。
+# 失效条件：下游自带鉴权头落地时，改为禁止 agent 侧 token、允许 backend 侧下游凭据。
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 fail=0

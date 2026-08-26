@@ -28,7 +28,9 @@ public:
 
 private:
     struct SpanAcc {
-        ir::Request req;
+        std::string principal;
+        std::string level;
+        std::string tool;
         std::string name;
         uint64_t startMs = 0;
         std::unordered_map<std::string, std::string> attrs;

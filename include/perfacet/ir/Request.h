@@ -8,18 +8,37 @@
 #include <string>
 #include <vector>
 
+namespace perfacet {
+class YamlIdentityStore;
+}
+
 namespace perfacet::ir {
 
 using Rank = uint16_t;
 
-struct Principal {
+struct PrincipalForge; // 仅测试夹具；产品路径只走 YamlIdentityStore::authenticate
+
+// 认证之后的身份。私有默认构造：忘了 authenticate 会变成编译错误，而不是 hasLevel=false 的静默失败。
+class AuthenticatedPrincipal {
+    friend class ::perfacet::YamlIdentityStore;
+    friend struct PrincipalForge;
+    AuthenticatedPrincipal() = default;
+
+public:
+    AuthenticatedPrincipal(const AuthenticatedPrincipal&) = default;
+    AuthenticatedPrincipal& operator=(const AuthenticatedPrincipal&) = default;
+    AuthenticatedPrincipal(AuthenticatedPrincipal&&) = default;
+    AuthenticatedPrincipal& operator=(AuthenticatedPrincipal&&) = default;
+
     std::string agentId;
     Rank        level = 0;        // 仅 hasLevel 时有意义
     Rank        grantBump = 0;    // 读时求值
-    bool        hasLevel = false; // 默认 false；仅认证成功才为 true
+    bool        hasLevel = false; // 仅 authenticate / 测试夹具写入
     bool        admin = false;    // 控制面开关，不是一档
     std::string levelName;        // 仅 span / 审计
 };
+
+using Principal = AuthenticatedPrincipal;
 
 inline Rank effectiveRank(const Principal& w) {
     return w.level > w.grantBump ? w.level : w.grantBump;
@@ -50,6 +69,9 @@ struct Request {
     TraceContext trace;
     uint64_t     deadlineMs = 0; // 绝对 Unix ms
     ClientCaps   caps;
+
+    Request() = delete;
+    explicit Request(Principal w) : who(std::move(w)) {}
 };
 
 // Backend 只吃这个，不含 Principal。

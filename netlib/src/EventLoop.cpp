@@ -48,6 +48,7 @@ void EventLoop::loop() {
     }
     looping_.store(true, std::memory_order_release);
     while (!quit_.load(std::memory_order_acquire)) {
+        if (nextTimeoutMs() == 0) processExpiredTimers();
         std::vector<Channel*> active = ep_.poll(nextTimeoutMs());
         for (Channel* ch : active) {
             ch->handleEvent();
@@ -190,9 +191,12 @@ void EventLoop::cancel(TimerId id) {
 
 void EventLoop::cancelInLoop(TimerId id) {
     canceled_.insert(id);
+    timerCbs_.erase(id); // 立刻丢掉回调，避免 shared_ptr 拖到到期
 }
 
 void EventLoop::insertTimer(Timer t) {
+    timerCbs_[t.id] = std::move(t.cb);
+    t.cb = nullptr;
     timers_.push(std::move(t));
     resetTimerfd();
 }
@@ -208,11 +212,13 @@ int EventLoop::nextTimeoutMs() const {
 }
 
 void EventLoop::handleTimerExpired() {
-    // 读掉 timerfd 的到期计数（必须，否则水平触发一直唤醒）
     uint64_t expirations = 0;
     ssize_t n = ::read(timerFd_, &expirations, sizeof(expirations));
     (void)n;
+    processExpiredTimers();
+}
 
+void EventLoop::processExpiredTimers() {
     auto now = std::chrono::steady_clock::now();
     std::vector<Timer> expired;
     while (!timers_.empty() && timers_.top().when <= now) {
@@ -222,29 +228,38 @@ void EventLoop::handleTimerExpired() {
     for (Timer& t : expired) {
         if (canceled_.count(t.id)) {
             canceled_.erase(t.id);
+            timerCbs_.erase(t.id);
             continue;
         }
-        if (t.cb) t.cb();
+        std::function<void()> cb;
+        auto it = timerCbs_.find(t.id);
+        if (it != timerCbs_.end()) {
+            cb = std::move(it->second);
+            timerCbs_.erase(it);
+        }
+        if (cb) cb();
         if (t.interval > 0 && !canceled_.count(t.id)) {
             t.when = now + std::chrono::duration_cast<
                               std::chrono::steady_clock::duration>(
                               std::chrono::duration<double>(t.interval));
-            timers_.push(t); // 周期任务重入堆
+            timerCbs_[t.id] = cb;
+            timers_.push(t);
         }
     }
     resetTimerfd();
 }
 
 void EventLoop::resetTimerfd() {
-    if (timers_.empty()) return;
-    auto now = std::chrono::steady_clock::now();
-    auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                  timers_.top().when - now)
-                  .count();
-    if (ns < 0) ns = 0;
     itimerspec its{};
-    its.it_value.tv_sec = static_cast<time_t>(ns / 1000000000LL);
-    its.it_value.tv_nsec = static_cast<long>(ns % 1000000000LL);
+    if (!timers_.empty()) {
+        auto now = std::chrono::steady_clock::now();
+        auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                      timers_.top().when - now)
+                      .count();
+        if (ns < 1) ns = 1; // 0/0 会解除 timerfd，堆里过期项就再也收不回来
+        its.it_value.tv_sec = static_cast<time_t>(ns / 1000000000LL);
+        its.it_value.tv_nsec = static_cast<long>(ns % 1000000000LL);
+    }
     ::timerfd_settime(timerFd_, 0, &its, nullptr);
 }
 

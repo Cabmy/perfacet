@@ -49,8 +49,9 @@ ir::TraceContext OtlpHttpJsonTracer::start(const ir::Request& req, const char* s
     t.parentSpanId = t.spanId;
     t.spanId = randomHex(8);
     SpanAcc acc;
-    acc.req = req;
-    acc.req.trace = t;
+    acc.principal = req.who.agentId;
+    acc.level = req.who.levelName;
+    acc.tool = req.name;
     acc.name = spanName ? spanName : "gateway";
     acc.startMs = nowMs();
     live_[t.spanId] = std::move(acc);
@@ -78,10 +79,10 @@ void OtlpHttpJsonTracer::end(const ir::TraceContext& t, ir::FailureClass k,
         attrs.push_back(ir::Json{{"key", k}, {"value", ir::Json{{"stringValue", v}}}});
     };
     add("service.name", service_);
-    add("principal", acc.req.who.agentId);
-    add("level", acc.req.who.levelName);
-    add("tool", acc.req.name);
-    auto key = ir::ToolKey::parse(acc.req.name);
+    add("principal", acc.principal);
+    add("level", acc.level);
+    add("tool", acc.tool);
+    auto key = ir::ToolKey::parse(acc.tool);
     if (key) add("server", key->backend);
     add("status", ir::failureClassName(k));
     for (const auto& kv : acc.attrs) add(kv.first.c_str(), kv.second);
