@@ -88,7 +88,7 @@ perfacet_lib(perfacet_policy
   src/policy/JsonlGrantStore.cpp)
 target_link_libraries(perfacet_policy PUBLIC perfacet_ir perfacet_detail yaml-cpp::yaml-cpp)
 
-perfacet_lib(perfacet_backend src/backend/HttpMcpBackend.cpp)
+perfacet_lib(perfacet_backend src/backend/HttpMcpBackend.cpp src/backend/KeepAliveClient.cpp)
 target_link_libraries(perfacet_backend PUBLIC perfacet_ir perfacet_detail netlib httplib::httplib Threads::Threads)
 
 # RankPolicy 认 Catalog：源文件跟 catalog 编进同一 target，避免 policy↔catalog 静态库环

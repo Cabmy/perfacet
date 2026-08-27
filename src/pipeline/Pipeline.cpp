@@ -6,16 +6,32 @@
 #include "perfacet/policy/RankPolicy.h"
 #include "perfacet/policy/YamlConfig.h"
 
+#include <cstdint>
+#include <cstdio>
 #include <sstream>
+#include <string_view>
 
 namespace perfacet {
 
 namespace {
 
 std::string paramsHashOf(const ir::Json& params) {
-    ir::Json p = params;
-    if (p.is_object() && p.contains("_meta")) p.erase("_meta");
-    return p.dump();
+    if (!params.is_object()) return params.dump();
+    uint64_t h = 14695981039346656037ULL;
+    auto mix = [&](std::string_view s) {
+        for (unsigned char c : s) {
+            h ^= static_cast<uint64_t>(c);
+            h *= 1099511628211ULL;
+        }
+    };
+    for (auto it = params.begin(); it != params.end(); ++it) {
+        if (it.key() == "_meta") continue;
+        mix(it.key());
+        mix(it.value().dump());
+    }
+    char out[17];
+    std::snprintf(out, sizeof(out), "%016llx", static_cast<unsigned long long>(h));
+    return out;
 }
 
 std::string summaryOf(const ir::Json& params) {
@@ -53,7 +69,18 @@ ir::Json createTaskResult(const Task& t) {
 
 Pipeline::Pipeline(Deps d) : d_(d) {}
 
-void Pipeline::requestStop() { stopping_ = true; }
+void Pipeline::requestStop() {
+    stopping_ = true;
+    for (auto& kv : live_) {
+        if (auto c = kv.second.lock()) c->cancelWait();
+    }
+}
+
+std::shared_ptr<Call> Pipeline::liveCall(const std::string& inflightId) {
+    auto it = live_.find(inflightId);
+    if (it == live_.end()) return nullptr;
+    return it->second.lock();
+}
 
 void Pipeline::audit(const char* event, const ir::Request& req, ir::FailureClass k,
                      std::string_view tool) {
@@ -83,11 +110,19 @@ ir::Json Pipeline::listBody(const ir::Principal& who) const {
 
 void Pipeline::handle(ir::Request req, std::function<void(ir::Response)> onDone) {
     const uint64_t t0 = nowMs();
-    if (d_.tracer) req.trace = d_.tracer->start(req, "gateway");
-    auto finish = [this, t0, onDone, req](ir::Response r) mutable {
+    ir::TraceContext total;
+    if (d_.tracer) {
+        total = d_.tracer->start(req, "total");
+        req.trace = total;
+        req.trace = d_.tracer->start(req, "gateway");
+    }
+    auto finish = [this, t0, onDone, req, total](ir::Response r) mutable {
         r.gatewayMs = nowMs() - t0;
         if (r.upstreamId.empty()) r.upstreamId = req.upstreamId;
-        if (d_.tracer) d_.tracer->end(req.trace, r.klass, r.gatewayMs);
+        if (d_.tracer) {
+            d_.tracer->end(req.trace, r.klass, r.gatewayMs);
+            d_.tracer->end(total, r.klass, r.gatewayMs);
+        }
         onDone(std::move(r));
     };
 
@@ -203,6 +238,7 @@ void Pipeline::handleBuiltin(ir::Request req, const ir::ToolKey& key,
             d_.grants->appendPending(req.who.agentId, bumpTo, *rank, nowMs());
         r.body = ir::callToolText(
             ir::Json{{"grantId", id}, {"status", "pending"}}.dump(), false);
+        audit("ok", req, ir::FailureClass::Ok, key.str());
         onDone(std::move(r));
         return;
     }
@@ -277,6 +313,8 @@ void Pipeline::handleCall(ir::Request req, std::function<void(ir::Response)> onD
             ir::Response r;
             if (req.caps.tasks) {
                 std::string tid = hit->taskId.value_or("");
+                auto orig = liveCall(hit->inflightId);
+                if (tid.empty() && orig && !orig->taskId().empty()) tid = orig->taskId();
                 if (tid.empty()) {
                     Task t{req.who};
                     t.taskId = "tsk_" + randomHex(8);
@@ -287,15 +325,25 @@ void Pipeline::handleCall(ir::Request req, std::function<void(ir::Response)> onD
                     t.lastUpdatedAtMs = nowMs();
                     t.ttlMs = d_.cfg->taskTtlMs;
                     t.owner = req.who;
-                    d_.tasks->insert(t);
-                    d_.inflight->setTaskId(hit->inflightId, t.taskId);
+                    if (!d_.tasks->insert(t)) {
+                        r.klass = ir::FailureClass::Unavailable;
+                        r.body = ir::callToolText("task store full", true);
+                        onDone(std::move(r));
+                        return;
+                    }
+                    if (orig) orig->attachTask(t.taskId);
+                    else d_.inflight->setTaskId(hit->inflightId, t.taskId);
                     tid = t.taskId;
-                    t = *d_.tasks->get(tid);
-                    r.body = createTaskResult(t);
-                } else {
-                    auto t = d_.tasks->get(tid);
-                    r.body = createTaskResult(*t);
                 }
+                auto t = d_.tasks->get(tid);
+                if (!t) {
+                    r.klass = ir::FailureClass::Unavailable;
+                    r.body = ir::callToolText("task not found", true);
+                    onDone(std::move(r));
+                    return;
+                }
+                if (d_.tracer) d_.tracer->set(req.trace, "task_id", tid);
+                r.body = createTaskResult(*t);
                 onDone(std::move(r));
                 return;
             }
@@ -348,6 +396,7 @@ void Pipeline::handleCall(ir::Request req, std::function<void(ir::Response)> onD
             if (d_.circuit->isOpen(k.backend, now) ||
                 d_.health->state(k.backend) == Health::State::Down) {
                 if (d_.circuit->isOpen(k.backend, now)) {
+                    if (d_.counters) d_.counters->circuitOpen.fetch_add(1);
                     audit("circuit_open", req, ir::FailureClass::Unavailable, k.str());
                 }
                 ir::Response r;
@@ -376,23 +425,35 @@ Call::Call(Pipeline* p, Governor::Permit permit, ir::Request req,
 
 Call::~Call() {
     if (promoteTimer_ && p_->d_.loop) p_->d_.loop->cancel(promoteTimer_);
+    if (upSpanLive_ && p_->d_.tracer) {
+        p_->d_.tracer->end(upTrace_, ir::FailureClass::Cancelled, nowMs() - t0_);
+        upSpanLive_ = false;
+    }
+    if (!responded_) {
+        ir::Response r;
+        r.klass = ir::FailureClass::Cancelled;
+        r.body = ir::callToolText("cancelled; remote may still run", true);
+        respond(std::move(r));
+    }
     if (p_->d_.inflight && !inflightId_.empty()) p_->d_.inflight->erase(inflightId_);
     if (!taskId_.empty()) p_->byTask_.erase(taskId_);
-    if (p_->d_.tracer && !responded_) {
-        p_->d_.tracer->end(trace_, ir::FailureClass::Cancelled, nowMs() - t0_);
-    }
+    if (!inflightId_.empty()) p_->live_.erase(inflightId_);
 }
 
 void Call::attachTask(std::string id) {
     taskId_ = std::move(id);
     p_->byTask_[taskId_] = shared_from_this();
     p_->d_.inflight->setTaskId(inflightId_, taskId_);
+    if (p_->d_.tracer) p_->d_.tracer->set(trace_, "task_id", taskId_);
 }
 
 void Call::respond(ir::Response r) {
     if (responded_) return;
     responded_ = true;
     r.gatewayMs = nowMs() - t0_;
+    if (!r.isError && r.klass == ir::FailureClass::Ok && req_.method == "tools/call") {
+        p_->audit("ok", req_, ir::FailureClass::Ok, key_.str().empty() ? req_.name : key_.str());
+    }
     if (onDone_) onDone_(std::move(r));
 }
 
@@ -438,19 +499,35 @@ void Call::armPromote() {
 void Call::onPromote() {
     if (responded_ || cancelled_) return;
     if (req_.caps.tasks) {
-        Task t{req_.who};
-        t.taskId = "tsk_" + randomHex(8);
-        t.agentId = req_.who.agentId;
-        t.key = key_;
-        t.status = "working";
-        t.createdAtMs = t0_;
-        t.lastUpdatedAtMs = nowMs();
-        t.ttlMs = p_->d_.cfg->taskTtlMs;
-        t.owner = req_.who;
-        p_->d_.tasks->insert(t);
-        attachTask(t.taskId);
+        if (taskId_.empty()) {
+            Task t{req_.who};
+            t.taskId = "tsk_" + randomHex(8);
+            t.agentId = req_.who.agentId;
+            t.key = key_;
+            t.status = "working";
+            t.createdAtMs = t0_;
+            t.lastUpdatedAtMs = nowMs();
+            t.ttlMs = p_->d_.cfg->taskTtlMs;
+            t.owner = req_.who;
+            if (!p_->d_.tasks->insert(t)) {
+                ir::Response r;
+                r.klass = ir::FailureClass::Unavailable;
+                r.body = ir::callToolText("task store full", true);
+                respond(std::move(r));
+                return;
+            }
+            attachTask(t.taskId);
+        }
+        auto t = p_->d_.tasks->get(taskId_);
+        if (!t) {
+            ir::Response r;
+            r.klass = ir::FailureClass::Unavailable;
+            r.body = ir::callToolText("task not found", true);
+            respond(std::move(r));
+            return;
+        }
         ir::Response r;
-        r.body = createTaskResult(t);
+        r.body = createTaskResult(*t);
         respond(std::move(r));
         return;
     }
@@ -462,7 +539,10 @@ void Call::onPromote() {
     respond(std::move(r));
 }
 
-void Call::startUpstream() { fireAttempt(); }
+void Call::startUpstream() {
+    p_->live_[inflightId_] = shared_from_this();
+    fireAttempt();
+}
 
 void Call::fireAttempt() {
     auto* be = p_->d_.catalog->backend(key_.backend);
@@ -475,12 +555,22 @@ void Call::fireAttempt() {
     }
     attempt_++;
     if (attempt_ == 1) armPromote();
+    if (p_->d_.tracer) {
+        ir::Request tmp = req_;
+        tmp.trace = trace_;
+        upTrace_ = p_->d_.tracer->start(tmp, "upstream");
+        upSpanLive_ = true;
+    }
     be->call(makeBackendCall(), [self = shared_from_this()](ir::Response r) {
         self->onUpstream(std::move(r));
     });
 }
 
 void Call::onUpstream(ir::Response r) {
+    if (upSpanLive_ && p_->d_.tracer) {
+        p_->d_.tracer->end(upTrace_, r.klass, r.upstreamMs);
+        upSpanLive_ = false;
+    }
     if (cancelled_) {
         upstreamDone_ = true;
         return;
@@ -492,13 +582,16 @@ void Call::onUpstream(ir::Response r) {
         p_->d_.circuit->onSuccess(key_.backend);
     } else {
         const bool becameOpen = p_->d_.circuit->onFailure(key_.backend, nowMs());
-        if (becameOpen && p_->d_.counters) {
-            p_->d_.counters->circuitOpen.fetch_add(1);
+        if (becameOpen) {
             p_->audit("circuit_open", req_, ir::FailureClass::Unavailable, key_.str());
         }
     }
-    if (p_->d_.retry->shouldRetry(r.klass, key_, meta, attempt_, req_.deadlineMs, open,
-                                  false)) {
+    const bool outstanding = responded_ || cancelled_ ||
+                             r.klass == ir::FailureClass::Timeout ||
+                             r.klass == ir::FailureClass::Cancelled;
+    if (!responded_ && !cancelled_ &&
+        p_->d_.retry->shouldRetry(r.klass, key_, meta, attempt_, req_.deadlineMs, open,
+                                  outstanding)) {
         fireAttempt();
         return;
     }

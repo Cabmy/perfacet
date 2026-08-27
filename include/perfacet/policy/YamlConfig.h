@@ -33,9 +33,11 @@ struct GovernorToolCfg {
 };
 
 struct YamlConfig {
-    std::string listen = "0.0.0.0:8741";
+    std::string listen = "127.0.0.1:8741";
     int workers = 4;
     uint64_t drainTimeoutMs = 3000;
+    std::size_t httpMaxBodyBytes = 1 << 20;
+    std::size_t workerQueueMax = 256;
     std::string grantsPath = "grants.jsonl";
     uint64_t grantRefreshMs = 100;
     uint64_t listTtlMs = 5000;
@@ -75,6 +77,7 @@ struct YamlConfig {
 
     uint64_t promoteAfterMs = 2000;
     uint64_t taskTtlMs = 3600000;
+    std::size_t taskMax = 10000;
 
     std::string otelEndpoint = "http://127.0.0.1:4318/v1/traces";
     std::string otelService = "perfacet";

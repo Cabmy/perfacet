@@ -1,43 +1,40 @@
 #include "detail/Random.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cstdint>
 #include <ctime>
-#include <fstream>
 #include <iomanip>
 #include <random>
 #include <sstream>
+#include <sys/random.h>
 
 namespace perfacet {
 
 std::string randomHex(std::size_t nBytes) {
     std::string out;
     out.resize(nBytes * 2);
-    std::ifstream urandom("/dev/urandom", std::ios::binary);
-    unsigned char buf[64];
     std::size_t got = 0;
-    if (urandom) {
-        while (got < nBytes) {
-            const std::size_t chunk = std::min(nBytes - got, sizeof(buf));
-            urandom.read(reinterpret_cast<char*>(buf), static_cast<std::streamsize>(chunk));
-            if (!urandom) break;
-            const auto n = static_cast<std::size_t>(urandom.gcount());
-            for (std::size_t i = 0; i < n; ++i) {
-                static constexpr char kHex[] = "0123456789abcdef";
-                out[(got + i) * 2] = kHex[buf[i] >> 4];
-                out[(got + i) * 2 + 1] = kHex[buf[i] & 0xf];
-            }
-            got += n;
+    unsigned char buf[64];
+    while (got < nBytes) {
+        const std::size_t chunk = std::min(nBytes - got, sizeof(buf));
+        const ssize_t n = ::getrandom(buf, chunk, 0);
+        if (n <= 0) break;
+        static constexpr char kHex[] = "0123456789abcdef";
+        for (ssize_t i = 0; i < n; ++i) {
+            out[(got + static_cast<std::size_t>(i)) * 2] = kHex[buf[i] >> 4];
+            out[(got + static_cast<std::size_t>(i)) * 2 + 1] = kHex[buf[i] & 0xf];
         }
+        got += static_cast<std::size_t>(n);
     }
     if (got < nBytes) {
-        std::random_device rd;
-        std::mt19937_64 gen(rd());
+        thread_local std::mt19937_64 gen = [] {
+            std::random_device rd;
+            return std::mt19937_64(rd());
+        }();
         std::uniform_int_distribution<int> dist(0, 255);
+        static constexpr char kHex[] = "0123456789abcdef";
         for (std::size_t i = got; i < nBytes; ++i) {
             const int v = dist(gen);
-            static constexpr char kHex[] = "0123456789abcdef";
             out[i * 2] = kHex[v >> 4];
             out[i * 2 + 1] = kHex[v & 0xf];
         }

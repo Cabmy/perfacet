@@ -61,6 +61,7 @@ public:
     const Endpoint& localAddr() const { return local_; }
     const Endpoint& peerAddr() const { return peer_; }
     bool connected() const { return state_ == State::kConnected; }
+    Buffer& inputBuffer() { return input_; }
 
     // 帧暂存队列（IO 线程内调用）
     void queueFrame(Buffer&& frame);

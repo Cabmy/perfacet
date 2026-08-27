@@ -77,3 +77,55 @@ TEST_CASE("不变量10 Deny 审计含 trace_id 且无 token") {
     CHECK(line.find("Bearer") == std::string::npos);
     CHECK(line.find("token") == std::string::npos);
 }
+
+TEST_CASE("成功 call 写 ok 审计含 trace_id") {
+    const std::string path = "/tmp/pf_ok_audit.jsonl";
+    std::ofstream(path, std::ios::trunc).close();
+
+    YamlConfig cfg;
+    cfg.taxonomy = Taxonomy(std::vector<std::string>{"l0"});
+    cfg.grantsPath = "/tmp/pf_ok_grants.jsonl";
+    std::ofstream(cfg.grantsPath, std::ios::trunc).close();
+
+    netlib::EventLoop loop;
+    Catalog catalog;
+    CatalogEntry e;
+    e.name = "echo";
+    e.meta.level = 0;
+    e.backend = std::make_unique<CountingBackend>();
+    catalog.add(std::move(e));
+    ToolIndex index;
+    index.replace("echo", {IndexedTool{"ping", "", ir::Json::object()}});
+    RankPolicy policy(catalog);
+    FacetView facet(index, policy);
+    CountingGovernor gov;
+    Counters counters;
+    InFlight inflight(&counters);
+    CountCircuit circuit(5, 1000, 1, &loop);
+    StubHealth health;
+    MemTaskStore tasks;
+    NullTracer tracer;
+    netlib::ThreadPool pool(1);
+    JsonlAuditLog audit(path, &pool);
+    RetryPolicy retry(cfg);
+    JsonlGrantStore grants(cfg.grantsPath, &cfg.taxonomy, 0, 1000);
+
+    Pipeline pipe(Pipeline::Deps{&loop, &policy, &gov, &inflight, &circuit, &health,
+                                 &catalog, &index, &facet, &tasks, &tracer, &audit,
+                                 &counters, &retry, &grants, &cfg});
+
+    ir::Request req = testReq(testWho("bot", 0, true, false, "l0"));
+    req.method = "tools/call";
+    req.name = "echo__ping";
+    req.trace.traceId = "cafebabedeadbeef";
+    req.deadlineMs = nowMs() + 1000;
+    req.params = ir::Json{{"name", "echo__ping"}, {"arguments", ir::Json::object()}};
+    pipe.handle(req, [](ir::Response) {});
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    std::ifstream in(path);
+    std::string line;
+    std::getline(in, line);
+    CHECK(line.find("\"event\":\"ok\"") != std::string::npos);
+    CHECK(line.find("cafebabedeadbeef") != std::string::npos);
+    CHECK(line.find("echo__ping") != std::string::npos);
+}

@@ -1,10 +1,9 @@
 #include "perfacet/backend/HttpMcpBackend.h"
+#include "backend/KeepAliveClient.h"
 #include "detail/Time.h"
 #include "perfacet/ir/ClientCaps.h"
 
-#include <httplib.h>
-
-#include <cstdio>
+#include <map>
 #include <stdexcept>
 
 namespace perfacet {
@@ -55,16 +54,12 @@ ir::Response HttpMcpBackend::callBlocking(const ir::BackendCall& bc) {
         return out;
     }
 
-    httplib::Client cli(host_, port_);
-    cli.set_connection_timeout(2, 0);
     int timeoutSec = 30;
     if (bc.deadlineMs > 0) {
         const uint64_t rem = bc.deadlineMs - nowMs();
         timeoutSec = static_cast<int>((rem + 999) / 1000);
         if (timeoutSec < 1) timeoutSec = 1;
     }
-    cli.set_read_timeout(timeoutSec, 0);
-    cli.set_write_timeout(timeoutSec, 0);
 
     ir::Json meta = bc.meta.is_object() ? bc.meta : ir::Json::object();
     meta[ir::kMetaProtocol] = ir::kProtocolVersion;
@@ -84,7 +79,7 @@ ir::Response HttpMcpBackend::callBlocking(const ir::BackendCall& bc) {
         {"params", params},
     };
 
-    httplib::Headers hdr{
+    std::map<std::string, std::string> hdr{
         {"Accept", "application/json, text/event-stream"},
         {"MCP-Protocol-Version", ir::kProtocolVersion},
         {"Mcp-Method", bc.method},
@@ -95,24 +90,22 @@ ir::Response HttpMcpBackend::callBlocking(const ir::BackendCall& bc) {
     auto tp = traceparent(bc.trace);
     if (!tp.empty()) hdr.emplace("traceparent", tp);
 
-    auto res = cli.Post(path_, hdr, body.dump(), "application/json");
+    const KeepAlivePost res =
+        keepAlivePost(host_, port_, path_, hdr, body.dump(), timeoutSec, timeoutSec);
     out.upstreamMs = nowMs() - t0;
-    if (!res) {
+    if (!res.transportOk) {
         out.isError = true;
-        const auto err = res.error();
-        const bool timeout = err == httplib::Error::Read || err == httplib::Error::Write ||
-                             err == httplib::Error::ConnectionTimeout;
-        out.klass = timeout ? ir::FailureClass::Timeout : ir::FailureClass::Unavailable;
+        out.klass = res.timeout ? ir::FailureClass::Timeout : ir::FailureClass::Unavailable;
         out.body = ir::jsonRpcError(-32000, "upstream unreachable");
         return out;
     }
-    if (res->status >= 500) {
+    if (res.status >= 500) {
         out.isError = true;
         out.klass = ir::FailureClass::Unavailable;
         out.body = ir::jsonRpcError(-32000, "upstream 5xx");
         return out;
     }
-    auto parsed = ir::Json::parse(res->body, nullptr, false);
+    auto parsed = ir::Json::parse(res.body, nullptr, false);
     if (parsed.is_discarded() || !parsed.is_object()) {
         out.isError = true;
         out.klass = ir::FailureClass::Protocol;
@@ -122,11 +115,7 @@ ir::Response HttpMcpBackend::callBlocking(const ir::BackendCall& bc) {
     if (parsed.contains("error")) {
         out.isError = true;
         out.body = parsed["error"];
-        // 上游 -32021 不得冒充本网关能力错误
-        out.klass = ir::FailureClass::Upstream;
-        if (out.body.is_object() && out.body.value("code", 0) == -32021) {
-            out.klass = ir::FailureClass::Upstream;
-        }
+        out.klass = ir::classify(out, {});
         return out;
     }
     out.isError = false;
@@ -137,10 +126,25 @@ ir::Response HttpMcpBackend::callBlocking(const ir::BackendCall& bc) {
 
 void HttpMcpBackend::call(const ir::BackendCall& bc,
                           std::function<void(ir::Response)> cb) {
-    pool_->add([this, bc, cb = std::move(cb)]() mutable {
-        ir::Response r = callBlocking(bc);
-        loop_->queueInLoop([cb = std::move(cb), r = std::move(r)]() mutable { cb(std::move(r)); });
-    });
+    auto failQueue = [this, cb]() {
+        ir::Response r;
+        r.isError = true;
+        r.klass = ir::FailureClass::Unavailable;
+        r.body = ir::jsonRpcError(-32000, "worker queue full");
+        loop_->queueInLoop([cb, r = std::move(r)]() mutable { cb(std::move(r)); });
+    };
+    if (pool_->full()) {
+        failQueue();
+        return;
+    }
+    try {
+        pool_->add([this, bc, cb = std::move(cb)]() mutable {
+            ir::Response r = callBlocking(bc);
+            loop_->queueInLoop([cb = std::move(cb), r = std::move(r)]() mutable { cb(std::move(r)); });
+        });
+    } catch (...) {
+        failQueue();
+    }
 }
 
 } // namespace perfacet

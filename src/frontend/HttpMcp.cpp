@@ -58,7 +58,6 @@ int httpStatusFor(const ir::Response& r) {
         if (r.body.is_object() && r.body.value("code", 0) == -32601) return 404;
         return 400;
     }
-    if (r.klass == ir::FailureClass::Unavailable && r.isError && r.httpStatus == 503) return 503;
     return 200;
 }
 
@@ -79,6 +78,8 @@ struct Session {
     std::map<std::string, std::string> headers;
     bool complete = false;
     bool busy = false;
+    bool bodyTooLarge = false;
+    size_t maxBody = 1 << 20;
 };
 
 int onUrl(llhttp_t* p, const char* at, size_t n) {
@@ -110,19 +111,24 @@ int onHdrValueComplete(llhttp_t* p) {
 }
 int onBody(llhttp_t* p, const char* at, size_t n) {
     auto* s = static_cast<Session*>(p->data);
+    if (s->body.size() + n > s->maxBody) {
+        s->bodyTooLarge = true;
+        return -1;
+    }
     s->body.append(at, n);
     return 0;
 }
 int onMsgComplete(llhttp_t* p) {
     auto* s = static_cast<Session*>(p->data);
     s->complete = true;
-    return 0;
+    return HPE_PAUSED;
 }
 
-std::shared_ptr<Session> makeSession(HttpMcp* srv, netlib::TcpConnection* conn) {
+std::shared_ptr<Session> makeSession(HttpMcp* srv, netlib::TcpConnection* conn, size_t maxBody) {
     auto s = std::make_shared<Session>();
     s->srv = srv;
     s->conn = conn;
+    s->maxBody = maxBody;
     llhttp_settings_init(&s->settings);
     s->settings.on_url = onUrl;
     s->settings.on_method = onMethod;
@@ -144,6 +150,7 @@ void resetSession(Session& s) {
     s.body.clear();
     s.headers.clear();
     s.complete = false;
+    s.bodyTooLarge = false;
     llhttp_reset(&s.parser);
     s.parser.data = &s;
 }
@@ -160,6 +167,10 @@ HttpMcp::HttpMcp(netlib::EventLoop* loop, const YamlConfig& cfg, YamlIdentitySto
 
 void HttpMcp::setStopping() { stopping_ = true; }
 
+void HttpMcp::pauseAccept() {
+    if (server_) server_->pauseAccept();
+}
+
 void HttpMcp::startListen() {
     if (listening_) return;
     netlib::Endpoint addr = netlib::parseHostPort(cfg_->listen);
@@ -173,17 +184,37 @@ void HttpMcp::startListen() {
 }
 
 void HttpMcp::onConn(const netlib::TcpConnectionPtr& conn) {
-    conn->setContext(makeSession(this, conn.get()));
+    conn->setContext(makeSession(this, conn.get(), cfg_->httpMaxBodyBytes));
 }
 
 void HttpMcp::onMessage(const netlib::TcpConnectionPtr& conn, netlib::Buffer& buf) {
     auto any = conn->getContext();
     auto sess = std::any_cast<std::shared_ptr<Session>>(any);
-    if (sess->busy) return; // 本请求尚未写回，剩余字节留在缓冲
+    if (sess->busy) return;
     const size_t n = buf.readableBytes();
+    if (n == 0) return;
     enum llhttp_errno err = llhttp_execute(&sess->parser, buf.peek(), n);
-    buf.retrieve(n);
-    if (err != HPE_OK && err != HPE_PAUSED) {
+    if (sess->bodyTooLarge) {
+        buf.retrieveAll();
+        sendHttp(conn, 413, "Payload Too Large",
+                 ir::Json{{"jsonrpc", "2.0"},
+                          {"id", nullptr},
+                          {"error", ir::jsonRpcError(-32700, "payload too large")}}
+                     .dump());
+        resetSession(*sess);
+        sess->busy = false;
+        return;
+    }
+    if (err == HPE_PAUSED) {
+        const char* pos = llhttp_get_error_pos(&sess->parser);
+        size_t consumed = n;
+        if (pos && pos >= buf.peek()) consumed = static_cast<size_t>(pos - buf.peek());
+        buf.retrieve(consumed);
+        llhttp_resume(&sess->parser);
+    } else if (err == HPE_OK) {
+        buf.retrieve(n);
+    } else {
+        buf.retrieve(n);
         sendHttp(conn, 400, "Bad Request",
                  ir::Json{{"jsonrpc", "2.0"},
                           {"id", nullptr},
@@ -195,10 +226,13 @@ void HttpMcp::onMessage(const netlib::TcpConnectionPtr& conn, netlib::Buffer& bu
     if (!sess->complete) return;
     sess->busy = true;
 
-    auto doneWrite = [conn, sess](int status, const char* reason, const std::string& body) {
+    auto doneWrite = [this, conn, sess](int status, const char* reason, const std::string& body) {
         sendHttp(conn, status, reason, body);
         resetSession(*sess);
         sess->busy = false;
+        loop_->queueInLoop([this, conn]() {
+            onMessage(conn, conn->inputBuffer());
+        });
     };
 
     auto path = sess->url;
@@ -229,10 +263,15 @@ void HttpMcp::onMessage(const netlib::TcpConnectionPtr& conn, netlib::Buffer& bu
     if (sess->method == "GET" && path == "/upstreams") {
         auto who = bearer.empty() ? std::nullopt : identity_->authenticate(bearer);
         if (!who || !who->admin) {
+            std::string tid;
+            const std::string tp = header(sess->headers, "traceparent");
+            if (tp.size() >= 55 && tp[2] == '-') tid = tp.substr(3, 32);
+            else tid = randomHex(16);
             if (audit_) {
                 AuditEvent e;
                 e.event = "auth_fail";
                 e.status = bearer.empty() ? "missing" : "unknown";
+                e.traceId = tid;
                 audit_->emit(std::move(e));
             }
             doneWrite(401, "Unauthorized",
@@ -278,6 +317,15 @@ void HttpMcp::onMessage(const netlib::TcpConnectionPtr& conn, netlib::Buffer& bu
         return;
     }
 
+    if (hasForbiddenSessionHeader(sess->headers)) {
+        doneWrite(400, "Bad Request",
+                  ir::Json{{"jsonrpc", "2.0"},
+                           {"id", nullptr},
+                           {"error", ir::jsonRpcError(-32600, "session headers are not accepted")}}
+                      .dump());
+        return;
+    }
+
     if (stopping_) {
         doneWrite(503, "Service Unavailable",
                   ir::Json{{"jsonrpc", "2.0"},
@@ -288,7 +336,7 @@ void HttpMcp::onMessage(const netlib::TcpConnectionPtr& conn, netlib::Buffer& bu
     }
 
     const std::string accept = header(sess->headers, "accept");
-    if (accept.find("application/json") == std::string::npos) {
+    if (!acceptIncludesJson(accept)) {
         doneWrite(406, "Not Acceptable",
                   ir::Json{{"jsonrpc", "2.0"},
                            {"id", nullptr},
@@ -386,10 +434,15 @@ void HttpMcp::onMessage(const netlib::TcpConnectionPtr& conn, netlib::Buffer& bu
     }
 
     if (bearer.empty()) {
+        std::string tid;
+        const std::string tp0 = header(sess->headers, "traceparent");
+        if (tp0.size() >= 55 && tp0[2] == '-') tid = tp0.substr(3, 32);
+        else tid = randomHex(16);
         if (audit_) {
             AuditEvent e;
             e.event = "auth_fail";
             e.status = "missing";
+            e.traceId = tid;
             audit_->emit(std::move(e));
         }
         rpcErr(401, -32000, "unauthorized", {}, id);
@@ -397,10 +450,15 @@ void HttpMcp::onMessage(const netlib::TcpConnectionPtr& conn, netlib::Buffer& bu
     }
     auto who = identity_->authenticate(bearer);
     if (!who) {
+        std::string tid;
+        const std::string tp0 = header(sess->headers, "traceparent");
+        if (tp0.size() >= 55 && tp0[2] == '-') tid = tp0.substr(3, 32);
+        else tid = randomHex(16);
         if (audit_) {
             AuditEvent e;
             e.event = "auth_fail";
             e.status = "unknown";
+            e.traceId = tid;
             audit_->emit(std::move(e));
         }
         rpcErr(401, -32000, "unauthorized", {}, id);

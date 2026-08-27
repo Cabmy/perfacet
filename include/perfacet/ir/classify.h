@@ -28,6 +28,7 @@ std::optional<FailureClass> failureClassFromName(std::string_view name);
 
 struct Response;
 
-FailureClass classify(const Response& r, std::error_code ec);
+// gatewayOwn：仅网关自身产生的 -32021 才是 Capability；上游同码是 Upstream。
+FailureClass classify(const Response& r, std::error_code ec, bool gatewayOwn = false);
 
 } // namespace perfacet::ir

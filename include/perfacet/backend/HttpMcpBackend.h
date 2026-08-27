@@ -1,5 +1,6 @@
 #pragma once
 // 上游阻塞 HTTP client 跑在 worker；完成必须 queueInLoop。不读 Principal、不重试、不熔断。
+// 传输：KeepAliveClient（thread_local × host:port，TCP_NODELAY）。禁止每次 call new Client。
 #include "perfacet/backend/Backend.h"
 
 #include "netlib/EventLoop.h"

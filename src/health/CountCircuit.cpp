@@ -63,11 +63,17 @@ bool CountCircuit::onFailure(const std::string& server, uint64_t now) {
 
 void CountCircuit::onProbeSuccess(const std::string& server) {
     auto& s = slot(server);
-    if (s.st == CState::HalfOpen || s.st == CState::Open) {
-        s.st = CState::Closed;
-        s.fails = 0;
-        s.halfOk = 0;
+    // OPEN 只走 cooldown → HALF_OPEN，探活不得直接合闸。
+    if (s.st == CState::HalfOpen) {
+        s.halfOk++;
+        if (s.halfOk >= halfOpenProbes_) {
+            s.st = CState::Closed;
+            s.fails = 0;
+            s.halfOk = 0;
+        }
+        return;
     }
+    if (s.st == CState::Closed) s.fails = 0;
 }
 
 } // namespace perfacet

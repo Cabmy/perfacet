@@ -47,6 +47,8 @@ private:
         uint64_t ewma = 0;
         int fails = 0;
         bool ewmaInit = false;
+        uint64_t listTtlMs = 0;
+        uint64_t lastProbeMs = 0;
     };
 
     void applyResult(const std::string& name, bool ok, uint64_t latencyMs,

@@ -7,6 +7,7 @@
 #include <httplib.h>
 
 #include <csignal>
+#include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <iostream>
@@ -47,7 +48,7 @@ int runServe(const std::string& yaml) {
 }
 
 int runGrantApprove(const std::string& yaml, const std::string& id, const std::string& agent,
-                    const std::string& bump) {
+                    const std::string& bump, uint64_t ttlOverride) {
     YamlConfig cfg;
     try {
         cfg = YamlConfig::load(yaml);
@@ -61,7 +62,7 @@ int runGrantApprove(const std::string& yaml, const std::string& id, const std::s
     bool ok = false;
     std::string outAgent = agent, outBump = bump, outId = id;
     if (!id.empty()) {
-        ok = store.approveById(id, now);
+        ok = store.approveById(id, now, ttlOverride);
         auto snap = store.snapshot();
         auto it = snap->byId.find(id);
         if (it != snap->byId.end()) {
@@ -139,17 +140,19 @@ int runCli(int argc, char** argv) {
     auto* grant = app.add_subcommand("grant", "提权审批");
     auto* approve = grant->add_subcommand("approve", "批准 pending Grant");
     std::string gid, agent, bump;
+    uint64_t ttlOverride = 0;
     approve->add_option("-c,--config", yaml, "YAML 配置")->required();
     approve->add_option("--id", gid, "grantId");
     approve->add_option("--agent", agent, "agent id");
     approve->add_option("--bump", bump, "目标档位名");
+    approve->add_option("--ttl-ms", ttlOverride, "覆盖 elevation.ttl_ms（演示到期用）");
     approve->callback([&]() {
         if (gid.empty() && (agent.empty() || bump.empty())) {
             rc = 1;
             std::fprintf(stderr, "[perfacet] 需要 --id 或 --agent + --bump\n");
             return;
         }
-        rc = runGrantApprove(yaml, gid, agent, bump);
+        rc = runGrantApprove(yaml, gid, agent, bump, ttlOverride);
     });
 
     auto* status = app.add_subcommand("status", "GET /upstreams");

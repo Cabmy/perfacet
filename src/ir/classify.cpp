@@ -41,7 +41,7 @@ std::optional<FailureClass> failureClassFromName(std::string_view name) {
     return std::nullopt;
 }
 
-FailureClass classify(const Response& r, std::error_code ec) {
+FailureClass classify(const Response& r, std::error_code ec, bool gatewayOwn) {
     if (ec) {
         if (ec == std::errc::timed_out) return FailureClass::Timeout;
         if (ec == std::errc::connection_refused ||
@@ -55,7 +55,9 @@ FailureClass classify(const Response& r, std::error_code ec) {
     if (!r.isError) return FailureClass::Ok;
     if (r.body.is_object() && r.body.contains("code") && r.body["code"].is_number_integer()) {
         const int code = r.body["code"].get<int>();
-        if (code == -32021) return FailureClass::Capability;
+        if (code == -32021) {
+            return gatewayOwn ? FailureClass::Capability : FailureClass::Upstream;
+        }
         if (code == -32600 || code == -32601 || code == -32602 || code == -32700) {
             return FailureClass::Protocol;
         }

@@ -31,6 +31,11 @@ Acceptor::~Acceptor() {
     }
 }
 
+void Acceptor::pause() {
+    loop_->assertInLoopThread();
+    if (ch_) ch_->disableAll();
+}
+
 uint16_t Acceptor::listenPort() const {
     if (listenAddr_.family() != Family::Tcp) return 0;
     sockaddr_in addr{};

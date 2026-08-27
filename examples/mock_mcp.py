@@ -33,6 +33,7 @@ class State:
         self.fail_after = fail_after
         self.delay = delay
         self.hits = 0
+        self.call_hits = 0
 
 
 async def handle(request: web.Request) -> web.StreamResponse:
@@ -73,6 +74,8 @@ async def handle(request: web.Request) -> web.StreamResponse:
         )
 
     st.hits += 1
+    if method == "tools/call":
+        st.call_hits += 1
     if st.fail_after > 0 and st.hits >= st.fail_after:
         return web.json_response(
             {
@@ -84,9 +87,12 @@ async def handle(request: web.Request) -> web.StreamResponse:
         )
 
     if method == "server/discover":
+        caps: dict = {"tools": {"listChanged": False}}
+        if request.app["declare_tasks"]:
+            caps["extensions"] = {"io.modelcontextprotocol/tasks": {}}
         result = {
             "protocolVersion": PROTOCOL,
-            "capabilities": {"tools": {"listChanged": False}},
+            "capabilities": caps,
             "serverInfo": {"name": "mock-mcp", "version": "0.1.0"},
             "ttlMs": 5000,
             "cacheScope": "private",
@@ -118,6 +124,11 @@ async def handle(request: web.Request) -> web.StreamResponse:
     )
 
 
+async def stats(request: web.Request) -> web.StreamResponse:
+    st: State = request.app["state"]
+    return web.json_response({"hits": st.hits, "call_hits": st.call_hits})
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, required=True)
@@ -133,6 +144,7 @@ def main() -> None:
     app["state"] = State(tools, args.fail_after, delay)
     app["declare_tasks"] = args.declare_tasks
     app.router.add_post("/mcp", handle)
+    app.router.add_get("/stats", stats)
     web.run_app(app, host="127.0.0.1", port=args.port, print=lambda *_: None)
 
 

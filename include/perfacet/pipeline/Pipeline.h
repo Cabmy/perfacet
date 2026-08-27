@@ -68,9 +68,11 @@ private:
     ir::Json listBody(const ir::Principal& who) const;
     void audit(const char* event, const ir::Request& req, ir::FailureClass k,
                std::string_view tool = {});
+    std::shared_ptr<Call> liveCall(const std::string& inflightId);
 
     Deps d_;
     std::unordered_map<std::string, std::weak_ptr<Call>> byTask_;
+    std::unordered_map<std::string, std::weak_ptr<Call>> live_;
     bool stopping_ = false;
 };
 
@@ -84,6 +86,7 @@ public:
     void startUpstream();
     void cancelWait();
     void attachTask(std::string taskId);
+    const std::string& taskId() const { return taskId_; }
 
 private:
     void respond(ir::Response r);
@@ -98,6 +101,8 @@ private:
     ir::Request req_;
     std::function<void(ir::Response)> onDone_;
     ir::TraceContext trace_;
+    ir::TraceContext upTrace_;
+    bool upSpanLive_ = false;
     bool responded_ = false;
     bool upstreamDone_ = false;
     bool cancelled_ = false;

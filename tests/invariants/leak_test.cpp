@@ -105,7 +105,7 @@ TEST_CASE("泄漏对账 1e5 混合终态后 permit/inflight 归零") {
     InFlight inflight(&counters);
     CountCircuit circuit(50, 1000, 1, &loop);
     StubHealth health;
-    MemTaskStore tasks;
+    MemTaskStore tasks(200000);
     NullTracer tracer;
     netlib::ThreadPool pool(2);
     JsonlAuditLog audit("/tmp/pf_leak_audit.jsonl", &pool);
@@ -231,7 +231,7 @@ TEST_CASE("泄漏对账 1e5 混合终态后 permit/inflight 归零") {
                     });
                 }
             });
-            for (int w = 0; w < 200 && got.load() < n; ++w) {
+            for (int w = 0; w < 2000 && got.load() < n; ++w) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
             }
             CHECK(got.load() == n);

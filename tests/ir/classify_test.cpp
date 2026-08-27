@@ -33,6 +33,15 @@ TEST_CASE("classify json-rpc protocol") {
     CHECK(static_cast<int>(classify(r, {})) == static_cast<int>(FailureClass::Protocol));
 }
 
+TEST_CASE("classify 上游 -32021 是 Upstream，网关自身才是 Capability") {
+    Response r;
+    r.isError = true;
+    r.body = {{"code", -32021}, {"message", "x"}};
+    CHECK(static_cast<int>(classify(r, {})) == static_cast<int>(FailureClass::Upstream));
+    CHECK(static_cast<int>(classify(r, {}, true)) ==
+          static_cast<int>(FailureClass::Capability));
+}
+
 TEST_CASE("failureClassName roundtrip") {
     CHECK(std::string(failureClassName(FailureClass::Throttled)) == "Throttled");
     auto n = perfacet::ir::failureClassFromName("Authz");

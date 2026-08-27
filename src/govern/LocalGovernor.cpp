@@ -2,12 +2,17 @@
 #include "detail/Time.h"
 
 #include <cstdio>
+#include <unordered_set>
 
 namespace perfacet {
 
 LocalGovernor::LocalGovernor(const YamlConfig& cfg, netlib::EventLoop* loop,
                              Counters* counters)
-    : cfg_(cfg), loop_(loop), counters_(counters) {}
+    : cfg_(cfg), loop_(loop), counters_(counters) {
+    std::fprintf(stderr,
+                 "[perfacet] governor.default.rate_per_sec=%d 已忽略（令牌桶未实现）\n",
+                 cfg_.ratePerSec);
+}
 
 int LocalGovernor::toolLimit(const std::string& toolStr) const {
     auto it = cfg_.governorTools.find(toolStr);

@@ -97,14 +97,17 @@ public:
         return pending_.size();
     }
     void flushOk() {
+        ir::Response r;
+        r.klass = ir::FailureClass::Ok;
+        r.body = ir::callToolText("ok", false);
+        flush(std::move(r));
+    }
+    void flush(ir::Response r) {
         std::vector<std::function<void(ir::Response)>> cbs;
         {
             std::lock_guard<std::mutex> lk(mu_);
             cbs.swap(pending_);
         }
-        ir::Response r;
-        r.klass = ir::FailureClass::Ok;
-        r.body = ir::callToolText("ok", false);
         for (auto& cb : cbs) cb(r);
     }
 

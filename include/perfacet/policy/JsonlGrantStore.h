@@ -34,7 +34,10 @@ public:
     JsonlGrantStore(std::string path, const Taxonomy* tax, ir::Rank maxBump,
                     uint64_t ttlMs);
 
-    // 仅 worker 调用：stat + 必要时解析，原子替换快照
+    using PostFn = std::function<void(std::function<void()>)>;
+    void setPost(PostFn fn) { post_ = std::move(fn); }
+
+    // 仅 worker 调用：stat + 必要时解析（锁外），原子替换快照
     void refreshOnWorker();
 
     // loop 上无 syscall：读快照 + now 比较
@@ -44,7 +47,7 @@ public:
 
     std::string appendPending(const std::string& agent, const std::string& bumpTo,
                               ir::Rank rank, uint64_t nowMs);
-    bool approveById(const std::string& id, uint64_t nowMs);
+    bool approveById(const std::string& id, uint64_t nowMs, uint64_t ttlOverride = 0);
     bool approveDirect(const std::string& agent, ir::Rank rank,
                        const std::string& bumpTo, uint64_t nowMs);
 
@@ -54,7 +57,7 @@ public:
     std::shared_ptr<const GrantTable> snapshot() const;
 
 private:
-    void parseFileUnlocked();
+    std::shared_ptr<GrantTable> parseFile() const;
     void appendLine(const GrantRecord& r);
 
     std::string path_;
@@ -64,8 +67,10 @@ private:
     std::shared_ptr<const GrantTable> table_;
     mutable std::mutex mu_;
     int64_t lastMtimeNs_ = -1;
+    bool dirty_ = false;
     std::unordered_map<std::string, bool> expireEmitted_;
     ExpireFn onExpire_;
+    PostFn post_;
 };
 
 } // namespace perfacet

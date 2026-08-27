@@ -22,19 +22,21 @@ ir::Json FacetView::listTools(const ir::Principal& who) const {
             tools.push_back(std::move(item));
         }
     }
-    // 内置工具：已认证即可见 request_elevation；upstream_status 仅 admin
-    if (!who.agentId.empty()) {
-        tools.push_back(ir::Json{
-            {"name", "perfacet__request_elevation"},
-            {"description", "申请临时提权（CLI 审批 + TTL）"},
-            {"inputSchema",
-             ir::Json{{"type", "object"},
-                      {"properties", ir::Json{{"bump_to", ir::Json{{"type", "string"}}}}},
-                      {"required", ir::Json::array({"bump_to"})}}},
-        });
-        if (who.admin) {
+    for (const char* tool : {"request_elevation", "upstream_status"}) {
+        ir::ToolKey k{"perfacet", tool};
+        if (!vis(k)) continue;
+        if (k.tool == "request_elevation") {
             tools.push_back(ir::Json{
-                {"name", "perfacet__upstream_status"},
+                {"name", k.str()},
+                {"description", "申请临时提权（CLI 审批 + TTL）"},
+                {"inputSchema",
+                 ir::Json{{"type", "object"},
+                          {"properties", ir::Json{{"bump_to", ir::Json{{"type", "string"}}}}},
+                          {"required", ir::Json::array({"bump_to"})}}},
+            });
+        } else {
+            tools.push_back(ir::Json{
+                {"name", k.str()},
                 {"description", "上游健康快照（控制面）"},
                 {"inputSchema", ir::Json{{"type", "object"}}},
             });

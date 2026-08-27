@@ -10,7 +10,7 @@
 namespace perfacet {
 
 struct AuditEvent {
-    std::string event; // 闭集：auth_fail/deny/throttled/inflight_hit/circuit_open/grant_approve/grant_expire
+    std::string event; // 闭集：ok/auth_fail/deny/throttled/inflight_hit/circuit_open/grant_approve/grant_expire
     uint64_t tsMs = 0;
     std::string traceId;
     std::string principal;

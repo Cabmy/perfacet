@@ -19,6 +19,7 @@ def main() -> None:
     ap.add_argument("--args", default="{}")
     ap.add_argument("--meta", default="{}")
     ap.add_argument("--tasks", action="store_true")
+    ap.add_argument("--traceparent", default="")
     ap.add_argument("--url", default="http://127.0.0.1:8741/mcp")
     args = ap.parse_args()
     extra_args = json.loads(args.args)
@@ -47,6 +48,8 @@ def main() -> None:
     }
     if args.name:
         headers["Mcp-Name"] = args.name
+    if args.traceparent:
+        headers["traceparent"] = args.traceparent
     req = urllib.request.Request(args.url, data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=120) as resp:

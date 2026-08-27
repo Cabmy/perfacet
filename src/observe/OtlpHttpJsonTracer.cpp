@@ -32,11 +32,14 @@ OtlpHttpJsonTracer::OtlpHttpJsonTracer(const YamlConfig& cfg, netlib::ThreadPool
       pool_(pool), counters_(counters) {}
 
 OtlpHttpJsonTracer::~OtlpHttpJsonTracer() {
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        closed_ = true;
+        q_.clear();
+    }
     for (;;) {
         {
             std::lock_guard<std::mutex> lk(mu_);
-            closed_ = true;
-            q_.clear();
             if (!draining_) return;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -126,7 +129,13 @@ void OtlpHttpJsonTracer::enqueue(std::string json) {
         }
     }
     if (kick) {
-        pool_->add([this]() { drain(); });
+        try {
+            pool_->add([this]() { drain(); });
+        } catch (...) {
+            std::lock_guard<std::mutex> lk(mu_);
+            draining_ = false;
+            if (counters_) counters_->otlpDropped.fetch_add(1);
+        }
     }
 }
 
@@ -142,6 +151,7 @@ void OtlpHttpJsonTracer::drain() {
             item = std::move(q_.front());
             q_.pop_front();
         }
+        if (closed_) continue;
         postOne(item);
     }
 }
@@ -151,8 +161,8 @@ void OtlpHttpJsonTracer::postOne(const std::string& json) {
     std::string path;
     auto hp = hostPortPath(endpoint_, path);
     httplib::Client cli(hp.first, hp.second);
-    cli.set_connection_timeout(1, 0);
-    cli.set_read_timeout(2, 0);
+    cli.set_connection_timeout(0, 200000);
+    cli.set_read_timeout(0, 200000);
     (void)cli.Post(path, json, "application/json");
 }
 

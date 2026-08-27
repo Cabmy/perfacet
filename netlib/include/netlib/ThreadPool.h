@@ -7,6 +7,7 @@
 #include <future>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <thread>
 #include <tuple>
 #include <type_traits>
@@ -16,7 +17,7 @@ namespace netlib {
 
 class ThreadPool {
 public:
-    explicit ThreadPool(size_t numThreads = 4);
+    explicit ThreadPool(size_t numThreads = 4, size_t maxQueue = 1024);
     ~ThreadPool();
 
     ThreadPool(const ThreadPool&) = delete;
@@ -37,6 +38,9 @@ public:
             if (stop_) {
                 throw std::runtime_error("ThreadPool::add on stopped pool");
             }
+            if (tasks_.size() >= maxQueue_) {
+                throw std::runtime_error("ThreadPool queue full");
+            }
             tasks_.emplace_back([task]() { (*task)(); });
         }
         cv_.notify_one();
@@ -44,6 +48,10 @@ public:
     }
 
     size_t size() const { return workers_.size(); }
+    bool full() const {
+        std::lock_guard<std::mutex> lk(mtx_);
+        return tasks_.size() >= maxQueue_;
+    }
 
 private:
     std::vector<std::thread> workers_;
@@ -51,6 +59,7 @@ private:
     mutable std::mutex mtx_;
     std::condition_variable cv_;
     bool stop_ = false;
+    size_t maxQueue_ = 1024;
 };
 
 } // namespace netlib

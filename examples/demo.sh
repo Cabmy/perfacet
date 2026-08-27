@@ -45,22 +45,6 @@ wait_port_free() {
   return 1
 }
 
-mcp() { uv run python "$ROOT/examples/mcp_call.py" "$@"; }
-
-names_of() {
-  echo "$1" | uv run python -c "import json,sys; r=json.load(sys.stdin); print(' '.join(t['name'] for t in r.get('result',{}).get('tools',[])))"
-}
-
-wait_port() {
-  local p="$1"
-  for _ in $(seq 1 50); do
-    if (echo >/dev/tcp/127.0.0.1/"$p") 2>/dev/null; then return 0; fi
-    sleep 0.1
-  done
-  echo "端口 $p 未就绪" >&2
-  return 1
-}
-
 wait_health() {
   for _ in $(seq 1 50); do
     if curl -sf http://127.0.0.1:8741/healthz | grep -q ok; then return 0; fi
@@ -99,7 +83,7 @@ uv run python "$ROOT/examples/mock_mcp.py" --port 9004 --tools run_payroll &
 PIDS+=($!)
 uv run python "$ROOT/examples/mock_mcp.py" --port 9005 --tools ping --fail-after 5 &
 PIDS+=($!)
-uv run python "$ROOT/examples/mock_mcp.py" --port 9006 --tools sleep --delay 30 &
+uv run python "$ROOT/examples/mock_mcp.py" --port 9006 --tools sleep --delay 30 --declare-tasks &
 PIDS+=($!)
 wait_port 9002
 wait_port 9003
@@ -125,20 +109,24 @@ echo "payroll: $T1"
 echo "typo:    $T2"
 test "$T1" = "$T2"
 
-echo "== 3 Grant：申请 → 批准 → sleep 0.2 → list 出现 github"
+echo "== 3 Grant：申请 → 批准短 TTL → list 出现 github → 到期消失"
 EV="$(mcp --token pf_cursor_intern --method tools/call --name perfacet__request_elevation --args '{"bump_to":"engineer"}')"
 GID="$(echo "$EV" | uv run python -c "import json,sys; t=json.load(sys.stdin)['result']['content'][0]['text']; print(json.loads(t)['grantId'])")"
 echo "grantId=$GID"
-"$BIN" grant approve -c "$ROOT/examples/perfacet.multi-level.yaml" --id "$GID"
-sleep 0.2
+"$BIN" grant approve -c "$ROOT/examples/perfacet.multi-level.yaml" --id "$GID" --ttl-ms 1500
+sleep 0.3
 L3="$(mcp --token pf_cursor_intern --method tools/list)"
 N3="$(names_of "$L3")"
 echo "after grant: $N3"
 echo "$N3" | grep -q "github__search"
 TTL="$(echo "$L3" | uv run python -c "import json,sys; print(int(json.load(sys.stdin)['result']['ttlMs']))")"
-# 有 Grant 时 ttlMs = min(list_ttl_ms, 剩余)；剩余 15min 时仍为 5000
-test "$TTL" -le 5000
+test "$TTL" -le 1500
 echo "ttlMs=$TTL"
+sleep 2
+L3b="$(mcp --token pf_cursor_intern --method tools/list)"
+N3b="$(names_of "$L3b")"
+echo "after expire: $N3b"
+if echo "$N3b" | grep -q "github__search"; then echo "Grant 到期后 intern 仍看见 github"; exit 1; fi
 
 echo "== 4 四个身份打 postgres__query（max=3），第四个 Throttled"
 mcp --token pf_cursor_intern --method tools/call --name postgres__query >/tmp/pf_q1.json &
@@ -159,20 +147,45 @@ echo "$CF" | uv run python -c "import json,sys; r=json.load(sys.stdin); t=r['res
 if echo "$LF" | grep -q payroll; then echo "intern list 泄漏 payroll"; exit 1; fi
 
 echo "== 6 github__search 审计对得上 trace_id"
-GOUT="$(mcp --token pf_claude_eng --method tools/call --name github__search)"
+TID="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+SPAN="bbbbbbbbbbbbbbbb"
+GOUT="$(mcp --token pf_claude_eng --method tools/call --name github__search --traceparent "00-${TID}-${SPAN}-01")"
 echo "$GOUT" | uv run python -c "import json,sys; r=json.load(sys.stdin); assert r.get('result',{}).get('isError', False) is False"
-sleep 0.3
+sleep 0.4
+grep -q "$TID" audit.jsonl
+grep -q '"event":"ok"' audit.jsonl
+grep -q 'github__search' audit.jsonl
 "$BIN" status -c "$ROOT/examples/perfacet.multi-level.yaml" | uv run python -c "import json,sys; j=json.load(sys.stdin); print(j['observe']); assert 'inflight_hit' in j['observe']"
 
 echo "== 旁路：slow 不声明 tasks → -32021"
 SLOW="$(mcp --token pf_researcher --method tools/call --name slow__sleep)"
 echo "$SLOW" | uv run python -c "import json,sys; r=json.load(sys.stdin); assert r['error']['code']==-32021; print('got -32021')"
+CALLS1="$(curl -sf http://127.0.0.1:9006/stats | uv run python -c "import json,sys; print(json.load(sys.stdin)['call_hits'])")"
+test "$CALLS1" = "1"
 
 echo "== 旁路：在途去重（slow 仍在途，同 params 再打）"
 H2="$(mcp --token pf_researcher --method tools/call --name slow__sleep)"
-echo "$H2" | uv run python -c "import json,sys; r=json.load(sys.stdin); t=r.get('result',{}).get('content',[{}])[0].get('text',''); assert r.get('result',{}).get('isError') is True; assert 'if_' in t; print(t[:240])"
-sleep 0.3
+CONF="$(echo "$H2" | uv run python -c "import json,sys,re; r=json.load(sys.stdin); t=r.get('result',{}).get('content',[{}])[0].get('text',''); assert r.get('result',{}).get('isError') is True; m=re.search(r'if_[0-9a-f]+', t); assert m; print(m.group(0))")"
+echo "confirm=$CONF"
+CALLS2="$(curl -sf http://127.0.0.1:9006/stats | uv run python -c "import json,sys; print(json.load(sys.stdin)['call_hits'])")"
+test "$CALLS2" = "1"
+sleep 0.2
 grep -q 'inflight_hit' audit.jsonl
+
+echo "== 旁路：声明 tasks 复用已有句柄"
+T2="$(mcp --token pf_researcher --method tools/call --name slow__sleep --tasks)"
+TIDH="$(echo "$T2" | uv run python -c "import json,sys; r=json.load(sys.stdin); print(r['result']['taskId'])")"
+echo "taskId=$TIDH"
+test -n "$TIDH"
+CALLS3="$(curl -sf http://127.0.0.1:9006/stats | uv run python -c "import json,sys; print(json.load(sys.stdin)['call_hits'])")"
+test "$CALLS3" = "1"
+
+echo "== 旁路：confirm 才第二条上游"
+H3="$(mcp --token pf_researcher --method tools/call --name slow__sleep --meta "{\"perfacet/confirm\":\"$CONF\"}")"
+echo "$H3" | uv run python -c "import json,sys; r=json.load(sys.stdin); assert r.get('error',{}).get('code')==-32021"
+CALLS4="$(curl -sf http://127.0.0.1:9006/stats | uv run python -c "import json,sys; print(json.load(sys.stdin)['call_hits'])")"
+test "$CALLS4" = "2"
+
 "$BIN" status -c "$ROOT/examples/perfacet.multi-level.yaml"
 
 echo "demo.sh 0-6 完成"

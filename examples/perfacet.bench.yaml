@@ -1,7 +1,9 @@
+# 吞吐压测：抬高 Governor 以免 echo 被 per_tool=4 排队卡死。
+# 产品默认仍是 examples/perfacet.yaml（workers=4, per_tool=4）。
 listen: "127.0.0.1:8741"
-workers: 4
+workers: 8
+worker_queue_max: 1024
 
-# 演示 token，仅本机。切勿对公网暴露。
 access:
   levels: [default]
 
@@ -14,24 +16,24 @@ backends:
     url: "http://127.0.0.1:9001/mcp"
 
 health:
-  interval_ms: 5000
+  interval_ms: 30000
   degraded_latency_ms: 1000
   down_after_failures: 3
 
 circuit:
-  open_after: 5
+  open_after: 50
   cooldown_ms: 30000
   half_open_probes: 1
 
 governor:
   default:
-    per_tool_concurrency: 4
-    per_principal_concurrency: 10
+    per_tool_concurrency: 64
+    per_principal_concurrency: 64
     queue_wait_ms: 5000
     rate_per_sec: 20
 
 tasks:
-  promote_after_ms: 2000
+  promote_after_ms: 60000
   ttl_ms: 3600000
 
 otel:
@@ -40,4 +42,4 @@ otel:
   queue_max: 1024
 
 audit:
-  path: "audit.jsonl"
+  path: "bench_audit.jsonl"

@@ -31,6 +31,7 @@ public:
     void setConnCb(TcpConnection::ConnCb cb) { connCb_ = std::move(cb); }
 
     void start(); // ioThreads>0 时启动 sub loop；必须先于 mainLoop::loop 调用
+    void pauseAccept(); // 停 listen，已有连接不关
     void stop();  // 关连接；有 sub loop 则 quit+join
     // 遍历所有活跃连接：cb 在各连接所属 IO 线程执行（可安全 send），
     // 全部分片遍历完成后才返回（阻塞调用线程）。只做遍历，不 close。

@@ -95,3 +95,106 @@ TEST_CASE("4 抢 3 FIFO 与 Permit 析构归还") {
     loop.quit();
     thr.join();
 }
+
+TEST_CASE("放槽后第四个 FIFO Go") {
+    YamlConfig cfg;
+    cfg.perToolConcurrency = 3;
+    cfg.perPrincipalConcurrency = 10;
+    cfg.queueWaitMs = 2000;
+    GovernorToolCfg tc;
+    tc.maxConcurrency = 3;
+    tc.queueWaitMs = 2000;
+    tc.status = GovernorToolCfg::Status::Active;
+    cfg.governorTools["pg__query"] = tc;
+
+    netlib::EventLoop loop;
+    std::thread thr([&]() { loop.loop(); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    Counters counters;
+    LocalGovernor gov(cfg, &loop, &counters);
+    ToolKey key{"pg", "query"};
+
+    std::vector<Governor::Permit> held;
+    std::mutex mu;
+    std::atomic<int> go{0};
+
+    auto take = [&](const std::string& id) {
+        Principal p = perfacet::test::testWho(id);
+        std::promise<void> done;
+        auto fut = done.get_future();
+        loop.runInLoop([&]() {
+            gov.acquire(p, key, perfacet::nowMs() + 2000, [&](Governor::Admit a, Governor::Permit perm) {
+                if (a == Governor::Admit::Go) {
+                    go++;
+                    std::lock_guard<std::mutex> lk(mu);
+                    held.push_back(std::move(perm));
+                }
+                done.set_value();
+            });
+        });
+        fut.wait();
+    };
+    take("a");
+    take("b");
+    take("c");
+    CHECK(go.load() == 3);
+
+    std::promise<void> fourth;
+    auto fourthFut = fourth.get_future();
+    loop.runInLoop([&]() {
+        Principal p = perfacet::test::testWho("d");
+        gov.acquire(p, key, perfacet::nowMs() + 2000, [&](Governor::Admit a, Governor::Permit perm) {
+            if (a == Governor::Admit::Go) {
+                go++;
+                std::lock_guard<std::mutex> lk(mu);
+                held.push_back(std::move(perm));
+            }
+            fourth.set_value();
+        });
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    CHECK(go.load() == 3);
+    loop.runInLoop([&]() {
+        Governor::Permit drop;
+        {
+            std::lock_guard<std::mutex> lk(mu);
+            drop = std::move(held.back());
+            held.pop_back();
+        }
+        drop = {};
+    });
+    fourthFut.wait();
+    CHECK(go.load() == 4);
+
+    loop.runInLoop([&]() {
+        std::lock_guard<std::mutex> lk(mu);
+        held.clear();
+    });
+    loop.quit();
+    thr.join();
+}
+
+TEST_CASE("Permit move-assign 先释放再接管") {
+    YamlConfig cfg;
+    cfg.perToolConcurrency = 1;
+    cfg.perPrincipalConcurrency = 10;
+    cfg.queueWaitMs = 0;
+    netlib::EventLoop loop;
+    std::thread thr([&]() { loop.loop(); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    Counters counters;
+    LocalGovernor gov(cfg, &loop, &counters);
+    Principal who = perfacet::test::testWho("bot");
+    ToolKey key{"pg", "query"};
+    Governor::Permit a, b;
+    loop.runInLoop([&]() {
+        gov.acquire(who, key, 0, [&](Governor::Admit, Governor::Permit p) { a = std::move(p); });
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    CHECK(counters.permitHeld.load() == 1);
+    loop.runInLoop([&]() { a = std::move(b); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    CHECK(counters.permitHeld.load() == 0);
+    loop.quit();
+    thr.join();
+}

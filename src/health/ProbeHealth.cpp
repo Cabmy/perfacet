@@ -25,10 +25,14 @@ void ProbeHealth::applyResult(const std::string& name, bool ok, uint64_t latency
             s.ewma = (s.ewma * 7 + latencyMs) / 8;
         }
         s.state = (s.ewma >= degradedMs_) ? State::Degraded : State::Up;
+        if (tools && tools->is_object() && tools->contains("ttlMs")) {
+            s.listTtlMs = tools->value("ttlMs", uint64_t{0});
+        }
     } else {
         s.fails++;
         if (s.fails >= downAfter_) s.state = State::Down;
     }
+    s.lastProbeMs = nowMs();
     if (cb_) cb_(name, s.state, ok ? tools : std::nullopt);
 }
 
@@ -53,14 +57,19 @@ void ProbeHealth::probeAllBlocking() {
 
 void ProbeHealth::startTimer() {
     const double sec = static_cast<double>(intervalMs_) / 1000.0;
-    timerId_ = loop_->runEvery(sec, [this]() {
+    timerId_ = loop_->runEvery(sec <= 0 ? 1.0 : sec, [this]() {
+        const uint64_t now = nowMs();
         for (const auto& name : catalog_->names()) {
             auto* e = catalog_->find(name);
             if (!e || !e->backend) continue;
+            auto& s = slots_[name];
+            const uint64_t minInterval =
+                s.listTtlMs > intervalMs_ ? s.listTtlMs : intervalMs_;
+            if (s.lastProbeMs != 0 && now < s.lastProbeMs + minInterval) continue;
             ir::BackendCall bc;
             bc.method = "tools/list";
             bc.params = ir::Json::object();
-            bc.deadlineMs = nowMs() + intervalMs_;
+            bc.deadlineMs = now + intervalMs_;
             e->backend->call(bc, [this, name](ir::Response r) {
                 applyResult(name, !r.isError && r.klass == ir::FailureClass::Ok,
                             r.upstreamMs, r.isError ? std::nullopt

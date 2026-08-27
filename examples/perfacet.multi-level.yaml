@@ -1,4 +1,4 @@
-listen: "0.0.0.0:8741"
+listen: "127.0.0.1:8741"
 workers: 4
 grants_path: "grants.jsonl"
 grant_refresh_ms: 100
@@ -11,7 +11,7 @@ access:
     ttl_ms: 900000
 
 agents:
-  cursor:       { token: "pf_cursor_intern", level: intern }
+  cursor:       { token: "pf_cursor_intern", level: intern }  # 演示 token，仅本机
   claude-code:  { token: "pf_claude_eng",    level: engineer }
   research-bot: { token: "pf_researcher",    level: intern }
   intern-bot:   { token: "pf_intern_bot",    level: intern }

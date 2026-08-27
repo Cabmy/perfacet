@@ -563,7 +563,7 @@ public:
 
 `HttpMcpBackend`：
 
-- worker 上 cpp-httplib 阻塞 `POST url`。
+- worker 上阻塞 `POST url`。传输是 `KeepAliveClient`：同一线程对同一 `host:port` 复用 httplib Client（keep-alive + TCP_NODELAY）。Client 非线程安全，禁止跨线程共享、禁止每次 `call` new Client。传输失败丢弃该槽，下次重建。connect 超时 2s；read/write 超时按本请求 deadline 收紧。
 - 带 `MCP-Protocol-Version: 2026-07-28`、`Mcp-Method`、需要时 `Mcp-Name`（上游工具名，**无** `backend__` 前缀）、`traceparent`。
 - 网关作为客户端：`_meta` 填自己的 `serverInfo` 当 clientInfo；`clientCapabilities` 对上游声明 tasks **当且仅当** 我们准备把上游 task 接住。M1：**不对上游声明 tasks**（不 re-attach `remoteTaskId`，割线后）。上游若因长调用返回 `-32021`，klass=Capability，对 agent 映射为 Unavailable/Upstream（不得把上游的 `-32021` 原样冒充本网关能力错误，除非本网关自己 promote 失败）。
 - 写 `upstreamMs`。完成 `queueInLoop`。
@@ -937,7 +937,7 @@ bench/           割线后；M1 可空
 | llhttp | agent HTTP/1.1 |
 | nlohmann/json | JSON-RPC |
 | yaml-cpp | 配置（系统包或 third_party） |
-| cpp-httplib | 上游阻塞 client |
+| cpp-httplib | 上游阻塞 client（KeepAliveClient 线程内复用） |
 | CLI11 | CLI |
 | doctest | 单测 |
 | Python 3 + aiohttp 或 FastAPI | `mock_mcp.py` |

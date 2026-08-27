@@ -5,7 +5,9 @@ namespace perfacet {
 RankPolicy::RankPolicy(const Catalog& catalog) : catalog_(&catalog) {}
 
 Decision RankPolicy::builtinDecision(const ir::Principal& who, const ir::ToolKey& key) {
-    if (key.tool == "request_elevation") return Decision::Allow; // list 可见；call 另判 hasLevel
+    if (key.tool == "request_elevation") {
+        return who.hasLevel ? Decision::Allow : Decision::Deny;
+    }
     if (key.tool == "upstream_status") {
         return who.admin ? Decision::Allow : Decision::Deny;
     }

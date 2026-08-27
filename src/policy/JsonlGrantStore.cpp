@@ -6,7 +6,7 @@
 #include <sys/stat.h>
 
 #include <fstream>
-#include <sstream>
+#include <vector>
 
 namespace perfacet {
 
@@ -20,28 +20,10 @@ std::shared_ptr<const GrantTable> JsonlGrantStore::snapshot() const {
     return table_;
 }
 
-void JsonlGrantStore::refreshOnWorker() {
-    struct stat st {};
-    if (::stat(path_.c_str(), &st) != 0) {
-        // 文件尚不存在：空表
-        std::lock_guard<std::mutex> lk(mu_);
-        if (lastMtimeNs_ != 0) {
-            lastMtimeNs_ = 0;
-            table_ = std::make_shared<GrantTable>();
-        }
-        return;
-    }
-    std::lock_guard<std::mutex> lk(mu_);
-    lastMtimeNs_ =
-        static_cast<int64_t>(st.st_mtim.tv_sec) * 1000000000LL + st.st_mtim.tv_nsec;
-    parseFileUnlocked();
-}
-
-void JsonlGrantStore::parseFileUnlocked() {
+std::shared_ptr<GrantTable> JsonlGrantStore::parseFile() const {
     auto next = std::make_shared<GrantTable>();
     std::ifstream in(path_);
     std::string line;
-    const uint64_t now = nowMs();
     while (std::getline(in, line)) {
         if (line.empty()) continue;
         auto j = nlohmann::json::parse(line, nullptr, false);
@@ -55,15 +37,50 @@ void JsonlGrantStore::parseFileUnlocked() {
         r.expiresAt = j.value("expiresAt", uint64_t{0});
         r.tsMs = j.value("ts_ms", uint64_t{0});
         if (r.id.empty()) continue;
-        next->byId[r.id] = r;
-        if (r.status == "approved" && r.expiresAt > 0 && now >= r.expiresAt) {
-            if (!expireEmitted_[r.id] && onExpire_) {
-                expireEmitted_[r.id] = true;
-                onExpire_(r);
+        next->byId[r.id] = std::move(r);
+    }
+    return next;
+}
+
+void JsonlGrantStore::refreshOnWorker() {
+    struct stat st {};
+    if (::stat(path_.c_str(), &st) != 0) {
+        std::lock_guard<std::mutex> lk(mu_);
+        if (dirty_) return;
+        if (lastMtimeNs_ != 0) {
+            lastMtimeNs_ = 0;
+            table_ = std::make_shared<GrantTable>();
+        }
+        return;
+    }
+    const int64_t mtime =
+        static_cast<int64_t>(st.st_mtim.tv_sec) * 1000000000LL + st.st_mtim.tv_nsec;
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        if (dirty_) return;
+        if (mtime == lastMtimeNs_) return;
+    }
+    auto next = parseFile();
+    std::vector<GrantRecord> expired;
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        if (dirty_) return;
+        lastMtimeNs_ = mtime;
+        table_ = next;
+        const uint64_t now = nowMs();
+        for (const auto& kv : next->byId) {
+            const auto& g = kv.second;
+            if (g.status == "approved" && g.expiresAt > 0 && now >= g.expiresAt) {
+                if (!expireEmitted_[g.id] && onExpire_) {
+                    expireEmitted_[g.id] = true;
+                    expired.push_back(g);
+                }
             }
         }
     }
-    table_ = std::move(next);
+    for (const auto& g : expired) {
+        if (onExpire_) onExpire_(g);
+    }
 }
 
 ir::Rank JsonlGrantStore::effectiveBump(std::string_view agentId, uint64_t nowMs) const {
@@ -94,6 +111,15 @@ uint64_t JsonlGrantStore::shortestRemainingMs(std::string_view agentId,
 }
 
 void JsonlGrantStore::appendLine(const GrantRecord& r) {
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        auto next = std::make_shared<GrantTable>();
+        if (table_) next->byId = table_->byId;
+        next->byId[r.id] = r;
+        table_ = std::move(next);
+        lastMtimeNs_ = -1;
+        dirty_ = true;
+    }
     nlohmann::json j{
         {"id", r.id},
         {"agent", r.agent},
@@ -103,16 +129,27 @@ void JsonlGrantStore::appendLine(const GrantRecord& r) {
         {"expiresAt", r.expiresAt},
         {"ts_ms", r.tsMs},
     };
-    std::ofstream out(path_, std::ios::app);
-    out << j.dump() << '\n';
-    out.flush();
-    {
+    auto write = [path = path_, line = j.dump()]() {
+        std::ofstream out(path, std::ios::app);
+        out << line << '\n';
+        out.flush();
+    };
+    auto clearDirty = [this]() {
         std::lock_guard<std::mutex> lk(mu_);
-        auto next = std::make_shared<GrantTable>();
-        if (table_) next->byId = table_->byId;
-        next->byId[r.id] = r;
-        table_ = std::move(next);
-        lastMtimeNs_ = -1;
+        dirty_ = false;
+    };
+    auto job = [write, clearDirty]() {
+        write();
+        clearDirty();
+    };
+    if (post_) {
+        try {
+            post_(std::move(job));
+        } catch (...) {
+            job();
+        }
+    } else {
+        job();
     }
 }
 
@@ -131,14 +168,15 @@ std::string JsonlGrantStore::appendPending(const std::string& agent,
     return r.id;
 }
 
-bool JsonlGrantStore::approveById(const std::string& id, uint64_t now) {
+bool JsonlGrantStore::approveById(const std::string& id, uint64_t now, uint64_t ttlOverride) {
     refreshOnWorker();
     auto snap = snapshot();
     auto it = snap->byId.find(id);
     if (it == snap->byId.end()) return false;
     GrantRecord r = it->second;
     r.status = "approved";
-    r.expiresAt = now + ttlMs_;
+    const uint64_t ttl = ttlOverride > 0 ? ttlOverride : ttlMs_;
+    r.expiresAt = now + ttl;
     r.tsMs = now;
     appendLine(r);
     return true;

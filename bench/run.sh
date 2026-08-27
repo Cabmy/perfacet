@@ -35,4 +35,6 @@ for _ in $(seq 1 50); do
   if curl -sf http://127.0.0.1:8741/healthz | grep -q ok; then break; fi
   sleep 0.1
 done
-uv run python "$ROOT/bench/http_bench.py" -n 8000 -c 32
+uv run python "$ROOT/bench/http_bench.py" -n 2000 -c 8 --url http://127.0.0.1:8741/mcp --name echo__echo
+echo "== 直连 mock（对照网关税）"
+uv run python "$ROOT/bench/http_bench.py" -n 2000 -c 8 --url http://127.0.0.1:9001/mcp --name echo --token x

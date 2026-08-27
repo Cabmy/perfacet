@@ -9,8 +9,10 @@
 #include "netlib/EventLoop.h"
 #include "netlib/TcpServer.h"
 
+#include <map>
 #include <memory>
 #include <string>
+#include <string_view>
 
 namespace perfacet {
 
@@ -18,6 +20,14 @@ class ProbeHealth;
 class Counters;
 class Catalog;
 class LocalGovernor;
+
+inline bool acceptIncludesJson(std::string_view accept) {
+    return accept.find("application/json") != std::string_view::npos;
+}
+
+inline bool hasForbiddenSessionHeader(const std::map<std::string, std::string>& h) {
+    return h.find("mcp-session-id") != h.end() || h.find("last-event-id") != h.end();
+}
 
 class HttpMcp {
 public:
@@ -28,6 +38,7 @@ public:
 
     void startListen();
     void setStopping();
+    void pauseAccept();
     bool stopping() const { return stopping_; }
     uint16_t port() const { return server_ ? server_->listenPort() : 0; }
 

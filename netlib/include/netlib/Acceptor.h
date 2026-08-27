@@ -22,6 +22,9 @@ public:
 
     void setNewConnCb(NewConnCb cb) { newConnCb_ = std::move(cb); }
 
+    // 停 accept：摘掉 listen 读事件。drain / GOAWAY 用。
+    void pause();
+
     // 实际监听端口（TCP port=0 时由内核分配，bind 后可查；UDS 恒 0）
     uint16_t listenPort() const;
 

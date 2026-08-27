@@ -9,7 +9,6 @@
 #include <deque>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 namespace perfacet {
@@ -55,9 +54,7 @@ private:
     std::unordered_map<std::string, int> toolInUse_;
     std::unordered_map<std::string, int> principalInUse_;
     std::unordered_map<std::string, std::deque<Waiter>> queues_;
-    std::unordered_set<uint64_t> canceledWait_;
     uint64_t nextWaitId_ = 1;
-    bool rateLogged_ = false;
 };
 
 } // namespace perfacet

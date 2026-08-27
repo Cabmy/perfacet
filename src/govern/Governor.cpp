@@ -11,7 +11,16 @@ struct Governor::Permit::Impl {
 
 Governor::Permit::Permit() = default;
 Governor::Permit::Permit(Permit&& o) noexcept = default;
-Governor::Permit& Governor::Permit::operator=(Permit&& o) noexcept = default;
+
+Governor::Permit& Governor::Permit::operator=(Permit&& o) noexcept {
+    if (this == &o) return *this;
+    if (impl_ && impl_->held && impl_->gov) {
+        impl_->held = false;
+        impl_->gov->releaseSlot(impl_->key, impl_->agentId);
+    }
+    impl_ = std::move(o.impl_);
+    return *this;
+}
 
 Governor::Permit::~Permit() {
     if (impl_ && impl_->held && impl_->gov) {

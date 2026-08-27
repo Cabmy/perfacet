@@ -32,18 +32,22 @@ YamlConfig YamlConfig::load(const std::string& path) {
     YamlConfig c;
     if (root["listen"]) c.listen = root["listen"].as<std::string>();
     if (root["workers"]) c.workers = root["workers"].as<int>();
+    if (root["worker_queue_max"]) c.workerQueueMax = root["worker_queue_max"].as<std::size_t>();
     if (root["drain_timeout_ms"]) c.drainTimeoutMs = root["drain_timeout_ms"].as<uint64_t>();
     if (root["grants_path"]) c.grantsPath = root["grants_path"].as<std::string>();
     if (root["grant_refresh_ms"]) c.grantRefreshMs = root["grant_refresh_ms"].as<uint64_t>();
     if (root["list_ttl_ms"]) c.listTtlMs = root["list_ttl_ms"].as<uint64_t>();
-
-    if (root["http"] && root["http"]["origin_allowlist"]) {
-        c.originAllowlist.clear();
-        for (const auto& n : root["http"]["origin_allowlist"]) {
-            c.originAllowlist.push_back(n.as<std::string>());
-        }
-        if (c.originAllowlist.empty()) {
-            throw std::runtime_error("http.origin_allowlist 不能为空");
+    if (root["http"]) {
+        auto h = root["http"];
+        if (h["max_body_bytes"]) c.httpMaxBodyBytes = h["max_body_bytes"].as<std::size_t>();
+        if (h["origin_allowlist"]) {
+            c.originAllowlist.clear();
+            for (const auto& n : h["origin_allowlist"]) {
+                c.originAllowlist.push_back(n.as<std::string>());
+            }
+            if (c.originAllowlist.empty()) {
+                throw std::runtime_error("http.origin_allowlist 不能为空");
+            }
         }
     }
 
@@ -194,12 +198,7 @@ YamlConfig YamlConfig::load(const std::string& path) {
                 c.perPrincipalConcurrency = d["per_principal_concurrency"].as<int>();
             }
             if (d["queue_wait_ms"]) c.queueWaitMs = d["queue_wait_ms"].as<uint64_t>();
-            if (d["rate_per_sec"]) {
-                c.ratePerSec = d["rate_per_sec"].as<int>();
-                std::fprintf(stderr,
-                             "[perfacet] governor.default.rate_per_sec=%d 已忽略（令牌桶未实现）\n",
-                             c.ratePerSec);
-            }
+            if (d["rate_per_sec"]) c.ratePerSec = d["rate_per_sec"].as<int>();
         }
         if (g["tools"] && g["tools"].IsMap()) {
             for (auto it = g["tools"].begin(); it != g["tools"].end(); ++it) {
@@ -220,6 +219,7 @@ YamlConfig YamlConfig::load(const std::string& path) {
         auto t = root["tasks"];
         if (t["promote_after_ms"]) c.promoteAfterMs = t["promote_after_ms"].as<uint64_t>();
         if (t["ttl_ms"]) c.taskTtlMs = t["ttl_ms"].as<uint64_t>();
+        if (t["max"]) c.taskMax = t["max"].as<std::size_t>();
     }
     if (root["otel"]) {
         auto o = root["otel"];

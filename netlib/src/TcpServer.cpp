@@ -36,6 +36,21 @@ void TcpServer::start() {
                                  : (std::to_string(ioThreads_) + " io threads").c_str());
 }
 
+void TcpServer::pauseAccept() {
+    if (!started_.load()) return;
+    if (mainLoop_->inLoopThread()) {
+        acceptor_.pause();
+        return;
+    }
+    std::promise<void> done;
+    auto fut = done.get_future();
+    mainLoop_->runInLoop([this, &done]() {
+        acceptor_.pause();
+        done.set_value();
+    });
+    fut.get();
+}
+
 void TcpServer::stop() {
     if (!started_.exchange(false)) return;
 

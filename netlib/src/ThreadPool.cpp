@@ -2,7 +2,7 @@
 
 namespace netlib {
 
-ThreadPool::ThreadPool(size_t numThreads) {
+ThreadPool::ThreadPool(size_t numThreads, size_t maxQueue) : maxQueue_(maxQueue == 0 ? 1 : maxQueue) {
     workers_.reserve(numThreads);
     for (size_t i = 0; i < numThreads; ++i) {
         workers_.emplace_back([this]() {
