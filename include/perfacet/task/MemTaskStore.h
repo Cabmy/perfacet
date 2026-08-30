@@ -1,6 +1,6 @@
 #pragma once
 // 进程内任务表。持久化时抽 TaskStore + JSONL/SQLite 即满足 SEP-2663 MUST。
-#include "perfacet/ir/Request.h"
+#include "perfacet/task/Task.h"
 
 #include <cstddef>
 #include <optional>
@@ -9,20 +9,6 @@
 #include <unordered_map>
 
 namespace perfacet {
-
-struct Task {
-    std::string taskId;
-    std::string agentId;
-    ir::ToolKey key;
-    std::string status; // working|completed|failed|cancelled
-    ir::Json resultOrError;
-    uint64_t createdAtMs = 0;
-    uint64_t lastUpdatedAtMs = 0;
-    uint64_t ttlMs = 0;
-    ir::Principal owner;
-
-    explicit Task(ir::Principal o) : owner(std::move(o)) {}
-};
 
 class MemTaskStore {
 public:

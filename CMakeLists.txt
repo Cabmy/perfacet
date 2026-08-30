@@ -3,6 +3,12 @@ project(Perfacet CXX C)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+# 单配置生成器未指定时默认 RelWithDebInfo，避免 clone 后裸 cmake 得到无 -O 的 bench 数字。
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
+  set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
+    Debug Release RelWithDebInfo MinSizeRel)
+endif()
 find_package(Threads REQUIRED)
 add_compile_options(-Wall -Wextra -g)
 

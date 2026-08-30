@@ -2,7 +2,6 @@
 
 #include <yaml-cpp/yaml.h>
 
-#include <cstdio>
 #include <stdexcept>
 #include <unordered_set>
 

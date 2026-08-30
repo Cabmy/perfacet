@@ -1,0 +1,16 @@
+# clangd 从本文件所在目录解析相对路径。
+# compile_commands.json 由 CMake（CMAKE_EXPORT_COMPILE_COMMANDS）生成在 build/。
+CompileFlags:
+  CompilationDatabase: build
+  Add:
+    - -std=c++17
+    - -Iinclude
+    - -Isrc
+    - -Inetlib/include
+
+If:
+  PathMatch: third_party/.*
+Index:
+  Background: Skip
+Diagnostics:
+  Suppress: "*"

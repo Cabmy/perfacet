@@ -1,6 +1,5 @@
 #pragma once
 // 按 interval 对上游 tools/list 探活。不写 ToolIndex。探测不占 Governor 配额。
-#include "perfacet/backend/Backend.h"
 #include "perfacet/catalog/Catalog.h"
 #include "perfacet/health/Health.h"
 #include "perfacet/ir/Request.h"

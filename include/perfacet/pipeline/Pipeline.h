@@ -2,7 +2,6 @@
 #include "perfacet/audit/JsonlAuditLog.h"
 #include "perfacet/catalog/Catalog.h"
 #include "perfacet/catalog/FacetView.h"
-#include "perfacet/catalog/IndexRefresher.h"
 #include "perfacet/catalog/ToolIndex.h"
 #include "perfacet/govern/Governor.h"
 #include "perfacet/health/CountCircuit.h"

@@ -1,5 +1,4 @@
 #include "netlib/TcpServer.h"
-#include "netlib/Config.h"
 
 #include <cstdio>
 #include <future>

@@ -2,7 +2,6 @@
 // netlib::Socket —— fd 的 RAII 封装与 socket 选项。
 // 按 Endpoint 族创建 AF_INET / AF_UNIX 字节流 socket；UDS bind 前 unlink 旧路径文件。
 // 只依赖 POSIX；不知道 epoll/EventLoop 的存在。
-#include <cstdint>
 #include <memory>
 
 #include "netlib/Endpoint.h"

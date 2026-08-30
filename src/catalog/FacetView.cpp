@@ -1,5 +1,4 @@
 #include "perfacet/catalog/FacetView.h"
-#include "perfacet/policy/RankPolicy.h"
 
 namespace perfacet {
 

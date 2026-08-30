@@ -3,12 +3,10 @@
 #include "detail/Time.h"
 #include "perfacet/catalog/Catalog.h"
 #include "perfacet/ir/ClientCaps.h"
-#include "perfacet/policy/RankPolicy.h"
 #include "perfacet/policy/YamlConfig.h"
 
 #include <cstdint>
 #include <cstdio>
-#include <sstream>
 #include <string_view>
 
 namespace perfacet {

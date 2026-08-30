@@ -1,5 +1,4 @@
 #include "perfacet/health/CountCircuit.h"
-#include "detail/Time.h"
 
 namespace perfacet {
 

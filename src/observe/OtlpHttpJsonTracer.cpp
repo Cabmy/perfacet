@@ -1,12 +1,10 @@
 #include "perfacet/observe/OtlpHttpJsonTracer.h"
 #include "detail/Random.h"
 #include "detail/Time.h"
-#include "perfacet/ir/ClientCaps.h"
 
 #include <httplib.h>
 
 #include <chrono>
-#include <cstdio>
 #include <thread>
 
 namespace perfacet {

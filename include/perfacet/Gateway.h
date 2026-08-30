@@ -1,6 +1,5 @@
 #pragma once
 #include "perfacet/audit/JsonlAuditLog.h"
-#include "perfacet/backend/HttpMcpBackend.h"
 #include "perfacet/catalog/Catalog.h"
 #include "perfacet/catalog/FacetView.h"
 #include "perfacet/catalog/IndexRefresher.h"

@@ -1,8 +1,6 @@
 #include "perfacet/ir/Request.h"
 #include "perfacet/ir/classify.h"
 
-#include <array>
-
 namespace perfacet::ir {
 
 namespace {

@@ -1,7 +1,6 @@
 #include "perfacet/cli/main_cli.h"
 #include "detail/Time.h"
 #include "perfacet/Gateway.h"
-#include "perfacet/ir/ClientCaps.h"
 
 #include <CLI/CLI.hpp>
 #include <httplib.h>

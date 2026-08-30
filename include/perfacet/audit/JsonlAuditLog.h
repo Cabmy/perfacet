@@ -1,7 +1,5 @@
 #pragma once
 // loop 投递 struct，worker append 一行。抽 AuditLog 时替换本类。
-#include "perfacet/ir/Request.h"
-
 #include "netlib/ThreadPool.h"
 
 #include <cstdint>

@@ -1,7 +1,6 @@
 #include "perfacet/health/ProbeHealth.h"
 #include "detail/Time.h"
 #include "perfacet/backend/HttpMcpBackend.h"
-#include "perfacet/ir/ClientCaps.h"
 
 #include <cstdio>
 

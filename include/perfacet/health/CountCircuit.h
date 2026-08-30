@@ -1,9 +1,8 @@
 #pragma once
 // 连续失败计数熔断。OPEN 不改切面。抽 Circuit 时替换本类。
-#include "perfacet/ir/Request.h"
-
 #include "netlib/EventLoop.h"
 
+#include <cstdint>
 #include <string>
 #include <unordered_map>
 
