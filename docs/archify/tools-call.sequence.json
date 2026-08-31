@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "tools/call 主路径",
+    "locale": "zh-CN",
+    "output": "tools-call.html",
+    "quality_profile": "showcase",
+    "viewBox": [1020, 760],
+    "views": [
+      {
+        "id": "entry-auth",
+        "label": "入口与身份",
+        "focus": ["agent", "httpmcp", "identity", "pipeline"],
+        "note": "头校验与 Bearer 认证发生在 Pipeline 之前。"
+      },
+      {
+        "id": "govern",
+        "label": "授权与限流",
+        "focus": ["pipeline", "policy", "inflight", "governor"],
+        "note": "先切面、再合流、再拿 Permit，缺一不可。"
+      },
+      {
+        "id": "upstream-return",
+        "label": "上游返回",
+        "focus": ["pipeline", "backend", "upstream", "httpmcp", "agent"],
+        "note": "worker 打上游后 queueInLoop 回 loop，再写 HTTP 响应。"
+      }
+    ]
+  },
+  "participants": [
+    { "id": "agent", "type": "external", "label": "Agent" },
+    { "id": "httpmcp", "type": "frontend", "label": "HttpMcp" },
+    { "id": "identity", "type": "security", "label": "Identity" },
+    { "id": "pipeline", "type": "backend", "label": "Pipeline" },
+    { "id": "policy", "type": "security", "label": "RankPolicy" },
+    { "id": "inflight", "type": "database", "label": "InFlight" },
+    { "id": "governor", "type": "backend", "label": "Governor" },
+    { "id": "backend", "type": "cloud", "label": "Backend" },
+    { "id": "upstream", "type": "external", "label": "上游 MCP" }
+  ],
+  "segments": [
+    { "from": 155, "to": 275, "label": "入口" },
+    { "from": 290, "to": 470, "label": "治理" },
+    { "from": 485, "to": 655, "label": "上游与响应" }
+  ],
+  "messages": [
+    { "id": "post-mcp", "from": "agent", "to": "httpmcp", "y": 170, "label": "POST /mcp", "variant": "emphasis" },
+    { "id": "auth-bearer", "from": "httpmcp", "to": "identity", "y": 200, "label": "authenticate", "variant": "security" },
+    { "id": "principal-ok", "from": "identity", "to": "httpmcp", "y": 232, "label": "Principal", "variant": "return" },
+    { "id": "to-pipeline", "from": "httpmcp", "to": "pipeline", "y": 266, "label": "handle(Request)", "variant": "emphasis" },
+    { "id": "authorize", "from": "pipeline", "to": "policy", "y": 300, "label": "authorizeCall", "variant": "security" },
+    { "id": "allow", "from": "policy", "to": "pipeline", "y": 332, "label": "Allow", "variant": "return" },
+    { "id": "inflight-lookup", "from": "pipeline", "to": "inflight", "y": 364, "label": "lookup hash" },
+    { "id": "inflight-miss", "from": "inflight", "to": "pipeline", "y": 396, "label": "miss", "variant": "return" },
+    { "id": "acquire", "from": "pipeline", "to": "governor", "y": 428, "label": "acquire" },
+    { "id": "permit", "from": "governor", "to": "pipeline", "y": 460, "label": "Permit", "variant": "return" },
+    { "id": "backend-call", "from": "pipeline", "to": "backend", "y": 490, "label": "Backend::call", "variant": "emphasis" },
+    { "id": "http-up", "from": "backend", "to": "upstream", "y": 522, "label": "HTTP tools/call", "variant": "emphasis" },
+    { "id": "up-result", "from": "upstream", "to": "backend", "y": 554, "label": "JSON-RPC result", "variant": "return" },
+    { "id": "on-up", "from": "backend", "to": "pipeline", "y": 586, "label": "queueInLoop", "variant": "return" },
+    { "id": "rpc-out", "from": "pipeline", "to": "httpmcp", "y": 618, "label": "Response", "variant": "return" },
+    { "id": "http-200", "from": "httpmcp", "to": "agent", "y": 648, "label": "HTTP 200", "variant": "return" }
+  ],
+  "activations": [
+    { "participant": "httpmcp", "from": 165, "to": 655, "type": "frontend" },
+    { "participant": "identity", "from": 194, "to": 238, "type": "security" },
+    { "participant": "pipeline", "from": 260, "to": 624, "type": "backend" },
+    { "participant": "policy", "from": 294, "to": 338, "type": "security" },
+    { "participant": "inflight", "from": 358, "to": 402, "type": "database" },
+    { "participant": "governor", "from": 422, "to": 466, "type": "backend" },
+    { "participant": "backend", "from": 484, "to": 592, "type": "cloud" },
+    { "participant": "upstream", "from": 516, "to": 560, "type": "external" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "主路径",
+      "items": [
+        "Frontend 失败不进 Pipeline；Pipeline 失败不打上游",
+        "Permit 在 Call 析构时归还，响应路径不显式 release"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "未画出的旁路",
+      "items": [
+        "InFlight 命中：无 confirm 则 Throttled 或升格 Task",
+        "熔断 Open / Health Down：Permit 析构归还，不发上游"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "线程切换",
+      "items": [
+        "HttpMcpBackend::call 把 callBlocking 丢进 ThreadPool",
+        "完成后 queueInLoop 回 IO 线程再 onUpstream / 写响应"
+      ]
+    }
+  ]
+}

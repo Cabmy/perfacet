@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "visual-check",
+  "evidenceKind": "automated-browser",
+  "status": "fail",
+  "visualReview": "pending",
+  "artifact": {
+    "path": "/home/cabmy/Desktop/cppServerLearning/perfacet/docs/archify/runtime.html",
+    "sha256": "4059f7ae791bab1f514d5c716b0a7ca01ae9c7eb1c988f6a2033faf48e2849d0",
+    "bytes": 730574
+  },
+  "state": {
+    "detail": "read",
+    "motion": "still"
+  },
+  "chrome": {
+    "status": "available",
+    "executable": "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe"
+  },
+  "diagnostics": [
+    {
+      "code": "viewer/visual-check-runtime",
+      "severity": "error",
+      "message": "visual-check could not complete its Chrome inspection.",
+      "subject": {
+        "artifact": "/home/cabmy/Desktop/cppServerLearning/perfacet/docs/archify/runtime.html"
+      },
+      "evidence": {
+        "reason": "Chrome DevTools write pipe failed: read ECONNRESET [ECONNRESET]\nChrome process: still running.\nChrome stderr:\n[0831/234915.646:ERROR:chrome\\app\\chrome_main_delegate.cc:1113] Remote debugging pipe file descriptors are not open."
+      },
+      "supportedFixes": [
+        "resolve the reported Chrome inspection error, then rerun visual-check"
+      ]
+    }
+  ],
+  "containment": {
+    "status": "fail",
+    "viewports": []
+  },
+  "readability": {
+    "status": "fail",
+    "minimumProjectedNodeTextPx": 6,
+    "viewports": []
+  },
+  "viewerChrome": {
+    "status": "fail",
+    "viewports": []
+  },
+  "captures": {
+    "status": "fail",
+    "screenshots": [],
+    "contactSheet": null
+  },
+  "sidecars": {
+    "receipt": "runtime.visual-check.json",
+    "contactSheet": "runtime.visual-check.html"
+  },
+  "error": "Chrome DevTools write pipe failed: read ECONNRESET [ECONNRESET]\nChrome process: still running.\nChrome stderr:\n[0831/234915.646:ERROR:chrome\\app\\chrome_main_delegate.cc:1113] Remote debugging pipe file descriptors are not open."
+}

@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "目录切面数据流",
+    "locale": "zh-CN",
+    "output": "catalog-facet.html",
+    "quality_profile": "showcase",
+    "viewBox": [1080, 760],
+    "views": [
+      {
+        "id": "ingest",
+        "label": "登记与探活",
+        "focus": ["yaml", "catalog", "probe", "index"],
+        "note": "YAML 登记上游；探活 tools/list 写入 last-known-good 索引。"
+      },
+      {
+        "id": "identity-rank",
+        "label": "身份与档位",
+        "focus": ["grants", "policy", "facet", "agent"],
+        "note": "YAML token 给出档位；Grant 只做 TTL bump。"
+      },
+      {
+        "id": "facet-out",
+        "label": "切面输出",
+        "focus": ["index", "policy", "facet", "agent"],
+        "note": "tools/list 只返回 visibilityFilter 为 Allow 的工具。"
+      }
+    ]
+  },
+  "stages": [
+    { "label": "配置源" },
+    { "label": "登记" },
+    { "label": "刷新" },
+    { "label": "策略" },
+    { "label": "切面" }
+  ],
+  "nodes": [
+    { "id": "yaml", "type": "database", "label": "YAML", "sublabel": "backends + levels", "stage": 0, "row": 1, "tag": "档位名" },
+    { "id": "catalog", "type": "database", "label": "Catalog", "sublabel": "url + Backend", "stage": 1, "row": 1, "tag": "meta.level" },
+    { "id": "probe", "type": "cloud", "label": "ProbeHealth", "sublabel": "周期 list", "stage": 2, "row": 0, "tag": "Up/Degraded/Down" },
+    { "id": "index", "type": "database", "label": "ToolIndex", "sublabel": "工具 schema", "stage": 2, "row": 4, "tag": "LKG" },
+    { "id": "grants", "type": "security", "label": "Grant JSONL", "sublabel": "pending/active", "stage": 3, "row": 0, "tag": "TTL" },
+    { "id": "policy", "type": "security", "label": "RankPolicy", "sublabel": "effectiveRank", "stage": 3, "row": 2, "tag": "secret" },
+    { "id": "facet", "type": "backend", "label": "FacetView", "sublabel": "listTools", "stage": 4, "row": 4, "tag": "private ttl" },
+    { "id": "agent", "type": "frontend", "label": "Agent 目录", "sublabel": "tools/list", "stage": 4, "row": 2, "tag": "cacheScope" }
+  ],
+  "flows": [
+    { "id": "yaml-catalog", "from": "yaml", "to": "catalog", "label": "backends[]", "classification": "登记", "variant": "emphasis" },
+    { "id": "catalog-probe", "from": "catalog", "to": "probe", "label": "Backend list", "classification": "探活" },
+    { "id": "probe-index", "from": "probe", "to": "index", "label": "onProbeResult", "classification": "LKG schema", "variant": "emphasis", "fromSide": "bottom", "toSide": "top", "labelDy": 24 },
+    { "id": "grants-policy", "from": "grants", "to": "policy", "label": "grantBump", "classification": "TTL 提权", "variant": "security", "labelDy": 24 },
+    { "id": "index-facet", "from": "index", "to": "facet", "label": "IndexedTool[]", "classification": "全集目录", "variant": "emphasis", "route": "straight" },
+    { "id": "policy-facet", "from": "policy", "to": "facet", "label": "visibilityFilter", "classification": "Allow only", "variant": "security" },
+    { "id": "facet-agent", "from": "facet", "to": "agent", "label": "裁过的 tools", "classification": "private", "variant": "emphasis", "fromSide": "top", "toSide": "bottom", "labelDy": -52 }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "同一张目录",
+      "items": [
+        "ToolIndex 存全集；FacetView 按身份裁剪，不复制上游",
+        "list ttlMs 还受 grant 最短剩余时间和 cold 索引约束"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "秘密上游",
+      "items": [
+        "secret 且不够格：authorizeCall 返回 Unknown",
+        "宕机也不会把该上游名字暴露给不该看见的 Agent"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "提权不改 YAML",
+      "items": [
+        "perfacet__request_elevation 只追加 pending JSONL",
+        "人用 perfacet grant approve；到期 refreshOnWorker 收回"
+      ]
+    }
+  ]
+}

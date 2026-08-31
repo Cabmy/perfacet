@@ -1,0 +1,234 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Perfacet 进程组装",
+    "locale": "zh-CN",
+    "output": "composition.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/Cabmy/perfacet",
+      "revision": "004495c5f2ac7188aa4a13011c1ddd4c6c78e0c1"
+    },
+    "views": [
+      {
+        "id": "boot",
+        "label": "启动路径",
+        "focus": ["cli", "yaml", "gateway", "tcpserver"],
+        "note": "CLI 读 YAML，Gateway 组装依赖，首轮 probe 后再 listen。"
+      },
+      {
+        "id": "io-workers",
+        "label": "IO 与 worker",
+        "focus": ["gateway", "eventloop", "tcpserver", "threadpool"],
+        "note": "单 EventLoop 做 accept 与定时器；httplib / OTLP / grant stat 进 ThreadPool。"
+      },
+      {
+        "id": "catalog-refresh",
+        "label": "目录刷新",
+        "focus": ["catalog", "index", "probe", "grants"],
+        "note": "探活结果写入 ToolIndex；Grant 文件在 worker 刷新后 bump 身份。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "cli",
+      "type": "frontend",
+      "label": "CLI",
+      "sublabel": "serve / grant / status",
+      "pos": [36, 100],
+      "size": [132, 64],
+      "sources": [
+        { "path": "src/cli/main.cpp", "line": 1, "end_line": 3, "label": "main" },
+        { "path": "src/cli/Cli.cpp", "line": 28, "end_line": 97, "label": "runServe" }
+      ]
+    },
+    {
+      "id": "yaml",
+      "type": "database",
+      "label": "YamlConfig",
+      "sublabel": "档位只在 YAML",
+      "pos": [36, 340],
+      "size": [132, 64],
+      "sources": [
+        { "path": "src/policy/YamlConfig.cpp", "line": 1, "end_line": 80, "label": "load" },
+        { "path": "examples/perfacet.yaml", "line": 1, "end_line": 43, "label": "示例配置" }
+      ]
+    },
+    {
+      "id": "ir",
+      "type": "backend",
+      "label": "ir::Request",
+      "sublabel": "跨层货币",
+      "tag": "不认 HTTP",
+      "pos": [36, 560],
+      "size": [132, 64],
+      "sources": [
+        { "path": "include/perfacet/ir/Request.h", "line": 61, "end_line": 93, "label": "Request" },
+        { "path": "src/ir/ToolKey.cpp", "line": 5, "end_line": 20, "label": "ToolKey" }
+      ]
+    },
+    {
+      "id": "gateway",
+      "type": "backend",
+      "label": "Gateway",
+      "sublabel": "依赖注入根",
+      "pos": [260, 340],
+      "size": [136, 64],
+      "sources": [
+        { "path": "src/cli/Gateway.cpp", "line": 9, "end_line": 56, "label": "ctor" },
+        { "path": "src/cli/Gateway.cpp", "line": 60, "end_line": 81, "label": "start/stop" },
+        { "path": "include/perfacet/Gateway.h", "line": 29, "end_line": 66, "label": "成员" }
+      ]
+    },
+    {
+      "id": "eventloop",
+      "type": "backend",
+      "label": "EventLoop",
+      "sublabel": "epoll + 定时器",
+      "tag": "单 loop",
+      "pos": [260, 100],
+      "size": [136, 64],
+      "sources": [
+        { "path": "netlib/src/EventLoop.cpp", "line": 43, "end_line": 107, "label": "loop()" },
+        { "path": "netlib/include/netlib/EventLoop.h", "line": 1, "end_line": 40, "label": "queueInLoop" }
+      ]
+    },
+    {
+      "id": "tcpserver",
+      "type": "frontend",
+      "label": "TcpServer",
+      "sublabel": "ioThreads=0",
+      "pos": [520, 340],
+      "size": [136, 64],
+      "sources": [
+        { "path": "netlib/src/TcpServer.cpp", "line": 22, "end_line": 52, "label": "start" },
+        { "path": "netlib/src/TcpServer.cpp", "line": 124, "end_line": 148, "label": "newConnection" }
+      ]
+    },
+    {
+      "id": "threadpool",
+      "type": "backend",
+      "label": "ThreadPool",
+      "sublabel": "httplib / OTLP",
+      "tag": "禁 IO 线程阻塞",
+      "pos": [260, 560],
+      "size": [136, 64],
+      "sources": [
+        { "path": "netlib/src/ThreadPool.cpp", "line": 1, "end_line": 35, "label": "add/full" }
+      ]
+    },
+    {
+      "id": "catalog",
+      "type": "database",
+      "label": "Catalog",
+      "sublabel": "upstream 登记",
+      "pos": [520, 100],
+      "size": [136, 64],
+      "sources": [
+        { "path": "src/catalog/Catalog.cpp", "line": 5, "end_line": 32, "label": "add/find" }
+      ]
+    },
+    {
+      "id": "index",
+      "type": "database",
+      "label": "ToolIndex",
+      "sublabel": "IndexRefresher",
+      "tag": "last-known-good",
+      "pos": [760, 100],
+      "size": [136, 64],
+      "sources": [
+        { "path": "src/catalog/ToolIndex.cpp", "line": 5, "end_line": 21, "label": "replace" },
+        { "path": "src/catalog/IndexRefresher.cpp", "line": 7, "end_line": 26, "label": "onProbeResult" }
+      ]
+    },
+    {
+      "id": "probe",
+      "type": "security",
+      "label": "ProbeHealth",
+      "sublabel": "周期 tools/list",
+      "pos": [760, 340],
+      "size": [136, 64],
+      "sources": [
+        { "path": "src/health/ProbeHealth.cpp", "line": 38, "end_line": 90, "label": "probeAll" }
+      ]
+    },
+    {
+      "id": "grants",
+      "type": "security",
+      "label": "Grant 文件",
+      "sublabel": "JSONL + refresh",
+      "pos": [520, 560],
+      "size": [136, 64],
+      "sources": [
+        { "path": "src/policy/JsonlGrantStore.cpp", "line": 45, "end_line": 85, "label": "refreshOnWorker" }
+      ]
+    },
+    {
+      "id": "retry",
+      "type": "security",
+      "label": "RetryPolicy",
+      "sublabel": "不放大重试",
+      "pos": [760, 560],
+      "size": [136, 64],
+      "sources": [
+        { "path": "src/health/RetryPolicy.cpp", "line": 8, "end_line": 36, "label": "shouldRetry" }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Gateway 组装的进程内对象",
+      "wraps": ["gateway", "eventloop", "tcpserver", "threadpool", "catalog", "index", "probe", "grants", "retry"],
+      "pad": 20
+    },
+    {
+      "kind": "security-group",
+      "label": "netlib IO 底座（禁止 MCP/Rank）",
+      "wraps": ["eventloop", "tcpserver", "threadpool"],
+      "pad": 14
+    }
+  ],
+  "connections": [
+    { "id": "cli-yaml", "from": "cli", "to": "yaml", "label": "-c yaml", "variant": "emphasis", "labelDy": 24 },
+    { "id": "yaml-gateway", "from": "yaml", "to": "gateway", "label": "构造", "variant": "emphasis", "labelDy": 24 },
+    { "id": "cli-eventloop", "from": "cli", "to": "eventloop", "label": "runServe" },
+    { "id": "gateway-loop", "from": "gateway", "to": "eventloop", "label": "定时器", "fromSide": "top", "toSide": "bottom" },
+    { "id": "gateway-tcp", "from": "gateway", "to": "tcpserver", "label": "listen", "variant": "emphasis" },
+    { "id": "gateway-pool", "from": "gateway", "to": "threadpool", "label": "workers", "fromSide": "bottom", "toSide": "top", "labelDy": 24 },
+    { "id": "eventloop-catalog", "from": "eventloop", "to": "catalog", "label": "登记 Backend" },
+    { "id": "catalog-index", "from": "catalog", "to": "index", "label": "工具名", "labelDy": 24 },
+    { "id": "probe-index", "from": "probe", "to": "index", "label": "onProbeResult", "variant": "dashed", "fromSide": "top", "toSide": "bottom" },
+    { "id": "tcpserver-probe", "from": "tcpserver", "to": "probe", "label": "listen 后探活" },
+    { "id": "threadpool-grants", "from": "threadpool", "to": "grants", "label": "stat/open", "variant": "dashed" },
+    { "id": "grants-retry", "from": "grants", "to": "retry", "label": "Call 重试", "variant": "dashed" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "启动顺序",
+      "items": [
+        "Gateway::start 先 refresh grants、阻塞首轮 probe，再 HttpMcp::startListen",
+        "停机：pauseAccept → 拒新请求 → 排空队列 → drain_timeout_ms 后 quit"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "线程契约",
+      "items": [
+        "IO loop 禁止 stat/open grants、POST OTLP、yaml-cpp、cpp-httplib",
+        "worker 完成必须 EventLoop::queueInLoop 再碰 Call / responded_"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "分层",
+      "items": [
+        "CMake 把每层编成独立 static lib；pipeline 故意不链 frontend",
+        "scripts/check_layers.sh 禁止跨层 include 回潮"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,257 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Perfacet 运行时架构",
+    "locale": "zh-CN",
+    "output": "runtime.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/Cabmy/perfacet",
+      "revision": "004495c5f2ac7188aa4a13011c1ddd4c6c78e0c1"
+    },
+    "views": [
+      {
+        "id": "mcp-entry",
+        "label": "MCP 入口",
+        "focus": ["agent", "httpmcp", "identity", "pipeline"],
+        "note": "Agent 经 Bearer 进入 HttpMcp，认证后交出 ir::Request。"
+      },
+      {
+        "id": "call-govern",
+        "label": "调用治理",
+        "focus": ["pipeline", "policy", "governor", "inflight", "circuit"],
+        "note": "切面授权之后才拿 Permit；熔断贴在上游调用一侧。"
+      },
+      {
+        "id": "upstream-observe",
+        "label": "上游与可观测",
+        "focus": ["pipeline", "backend", "upstream", "tasks", "observe"],
+        "note": "worker 打 HTTP 上游；长调用从 InFlight 升格 Task。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "agent",
+      "type": "external",
+      "label": "Agent",
+      "sublabel": "MCP 2026-07-28",
+      "pos": [36, 340],
+      "size": [128, 64],
+      "sources": [
+        { "path": "examples/mcp_call.py", "line": 1, "end_line": 63, "label": "mcp_call.py" }
+      ]
+    },
+    {
+      "id": "grants",
+      "type": "security",
+      "label": "JsonlGrantStore",
+      "sublabel": "CLI 审批 + TTL",
+      "tag": "grantBump",
+      "pos": [36, 100],
+      "size": [128, 64],
+      "sources": [
+        { "path": "src/policy/JsonlGrantStore.cpp", "line": 86, "end_line": 111, "label": "effectiveBump" },
+        { "path": "src/policy/JsonlGrantStore.cpp", "line": 156, "end_line": 199, "label": "append/approve" }
+      ]
+    },
+    {
+      "id": "httpmcp",
+      "type": "frontend",
+      "label": "HttpMcp",
+      "sublabel": "POST /mcp",
+      "tag": "IO loop",
+      "pos": [260, 340],
+      "size": [136, 64],
+      "sources": [
+        { "path": "src/frontend/HttpMcp.cpp", "line": 174, "end_line": 184, "label": "startListen" },
+        { "path": "src/frontend/HttpMcp.cpp", "line": 311, "end_line": 434, "label": "POST /mcp" },
+        { "path": "include/perfacet/frontend/HttpMcp.h", "line": 1, "end_line": 12, "label": "层边界" }
+      ]
+    },
+    {
+      "id": "identity",
+      "type": "security",
+      "label": "YamlIdentityStore",
+      "sublabel": "Bearer → Principal",
+      "pos": [260, 100],
+      "size": [136, 64],
+      "sources": [
+        { "path": "src/policy/YamlIdentityStore.cpp", "line": 17, "end_line": 33, "label": "authenticate" },
+        { "path": "include/perfacet/ir/Request.h", "line": 21, "end_line": 49, "label": "Principal" }
+      ]
+    },
+    {
+      "id": "pipeline",
+      "type": "backend",
+      "label": "Pipeline",
+      "sublabel": "handle / Call",
+      "tag": "编排核",
+      "pos": [520, 340],
+      "size": [136, 64],
+      "sources": [
+        { "path": "src/pipeline/Pipeline.cpp", "line": 109, "end_line": 185, "label": "handle" },
+        { "path": "src/pipeline/Pipeline.cpp", "line": 269, "end_line": 412, "label": "handleCall" },
+        { "path": "include/perfacet/pipeline/Pipeline.h", "line": 30, "end_line": 76, "label": "Deps" }
+      ]
+    },
+    {
+      "id": "policy",
+      "type": "security",
+      "label": "RankPolicy",
+      "sublabel": "FacetView 切面",
+      "tag": "secret→Unknown",
+      "pos": [520, 100],
+      "size": [136, 64],
+      "sources": [
+        { "path": "src/policy/RankPolicy.cpp", "line": 17, "end_line": 32, "label": "authorizeCall" },
+        { "path": "src/catalog/FacetView.cpp", "line": 8, "end_line": 45, "label": "listTools" },
+        { "path": "include/perfacet/policy/Policy.h", "line": 8, "end_line": 16, "label": "Decision" }
+      ]
+    },
+    {
+      "id": "governor",
+      "type": "backend",
+      "label": "LocalGovernor",
+      "sublabel": "Permit RAII",
+      "tag": "FIFO 排队",
+      "pos": [520, 560],
+      "size": [136, 64],
+      "sources": [
+        { "path": "src/govern/LocalGovernor.cpp", "line": 55, "end_line": 84, "label": "acquire" },
+        { "path": "include/perfacet/govern/Governor.h", "line": 9, "end_line": 39, "label": "Permit" }
+      ]
+    },
+    {
+      "id": "inflight",
+      "type": "database",
+      "label": "InFlight",
+      "sublabel": "agent+tool+hash",
+      "tag": "合流",
+      "pos": [760, 560],
+      "size": [136, 64],
+      "sources": [
+        { "path": "src/pipeline/InFlight.cpp", "line": 8, "end_line": 61, "label": "lookup/insert" }
+      ]
+    },
+    {
+      "id": "circuit",
+      "type": "security",
+      "label": "Circuit+Health",
+      "sublabel": "CountCircuit / Probe",
+      "pos": [760, 100],
+      "size": [136, 64],
+      "sources": [
+        { "path": "src/health/CountCircuit.cpp", "line": 21, "end_line": 63, "label": "isOpen" },
+        { "path": "src/health/ProbeHealth.cpp", "line": 15, "end_line": 56, "label": "probe" },
+        { "path": "include/perfacet/health/Health.h", "line": 7, "end_line": 13, "label": "State" }
+      ]
+    },
+    {
+      "id": "backend",
+      "type": "cloud",
+      "label": "HttpMcpBackend",
+      "sublabel": "worker + httplib",
+      "tag": "KeepAlive",
+      "pos": [760, 340],
+      "size": [136, 64],
+      "sources": [
+        { "path": "src/backend/HttpMcpBackend.cpp", "line": 45, "end_line": 148, "label": "callBlocking" },
+        { "path": "src/backend/KeepAliveClient.cpp", "line": 1, "end_line": 61, "label": "keepAlivePost" },
+        { "path": "include/perfacet/backend/Backend.h", "line": 8, "end_line": 13, "label": "Backend" }
+      ]
+    },
+    {
+      "id": "observe",
+      "type": "messagebus",
+      "label": "Tracer+Audit",
+      "sublabel": "OTLP / JSONL",
+      "tag": "trace_id",
+      "pos": [1000, 100],
+      "size": [136, 64],
+      "sources": [
+        { "path": "src/observe/OtlpHttpJsonTracer.cpp", "line": 47, "end_line": 113, "label": "start/end" },
+        { "path": "src/audit/JsonlAuditLog.cpp", "line": 14, "end_line": 36, "label": "emit" }
+      ]
+    },
+    {
+      "id": "tasks",
+      "type": "database",
+      "label": "MemTaskStore",
+      "sublabel": "MCP Tasks",
+      "tag": "promote",
+      "pos": [1000, 560],
+      "size": [136, 64],
+      "sources": [
+        { "path": "src/task/MemTaskStore.cpp", "line": 6, "end_line": 43, "label": "insert/get" },
+        { "path": "src/pipeline/Pipeline.cpp", "line": 489, "end_line": 538, "label": "onPromote" }
+      ]
+    },
+    {
+      "id": "upstream",
+      "type": "external",
+      "label": "上游 MCP",
+      "sublabel": "已有 HTTP server",
+      "pos": [1000, 340],
+      "size": [136, 64],
+      "sources": [
+        { "path": "examples/mock_mcp.py", "line": 1, "end_line": 80, "label": "mock_mcp.py" }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Perfacet 单进程 / 单 EventLoop",
+      "wraps": ["httpmcp", "identity", "grants", "pipeline", "policy", "governor", "inflight", "circuit", "backend", "observe", "tasks"],
+      "pad": 22
+    },
+    {
+      "kind": "security-group",
+      "label": "身份与切面",
+      "wraps": ["identity", "grants", "policy"],
+      "pad": 14
+    }
+  ],
+  "connections": [
+    { "id": "agent-httpmcp", "from": "agent", "to": "httpmcp", "label": "POST /mcp", "variant": "emphasis" },
+    { "id": "httpmcp-identity", "from": "httpmcp", "to": "identity", "label": "Bearer", "variant": "security", "fromSide": "top", "toSide": "bottom" },
+    { "id": "identity-grants", "from": "identity", "to": "grants", "label": "grantBump", "variant": "security" },
+    { "id": "httpmcp-pipeline", "from": "httpmcp", "to": "pipeline", "label": "ir::Request", "variant": "emphasis" },
+    { "id": "pipeline-policy", "from": "pipeline", "to": "policy", "label": "授权", "variant": "security", "fromSide": "top", "toSide": "bottom" },
+    { "id": "pipeline-governor", "from": "pipeline", "to": "governor", "label": "Permit", "fromSide": "bottom", "toSide": "top", "labelDy": 24 },
+    { "id": "governor-inflight", "from": "governor", "to": "inflight", "label": "insert" },
+    { "id": "pipeline-backend", "from": "pipeline", "to": "backend", "label": "Backend::call", "variant": "emphasis" },
+    { "id": "backend-circuit", "from": "backend", "to": "circuit", "label": "熔断", "variant": "security", "fromSide": "top", "toSide": "bottom" },
+    { "id": "backend-upstream", "from": "backend", "to": "upstream", "label": "HTTP tools/call", "variant": "emphasis" },
+    { "id": "circuit-observe", "from": "circuit", "to": "observe", "label": "OTLP", "variant": "dashed" },
+    { "id": "inflight-tasks", "from": "inflight", "to": "tasks", "label": "升格 Task", "variant": "dashed" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "入口契约",
+      "items": [
+        "只认 MCP 2026-07-28；无 session、无 initialize、无 stdio 前端",
+        "HttpMcp 只做 HTTP↔IR；编排全部在 Pipeline::handle"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "切面与治理",
+      "items": [
+        "不够格且 secret 的上游对外是 Unknown，不是 Deny",
+        "Permit 析构是唯一归还路径；超限 FIFO 排队"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "长调用与可观测",
+      "items": [
+        "promoteAfterMs 到点升格 MCP Tasks；客户端无 tasks 则 -32021",
+        "OTLP、审计 JSONL、Counters 共用 Request.trace.traceId"
+      ]
+    }
+  ]
+}

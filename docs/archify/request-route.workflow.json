@@ -1,0 +1,89 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "请求方法分流",
+    "locale": "zh-CN",
+    "output": "request-route.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "happy-path",
+        "label": "主路径",
+        "focus": ["post", "parse", "headers", "auth", "handle", "call"],
+        "note": "合法 POST /mcp 经头校验与身份后进入 tools/call。"
+      },
+      {
+        "id": "policy-stop",
+        "label": "协议与授权拒绝",
+        "focus": ["headers", "unknown", "auth", "deny"],
+        "note": "未知方法或不够格在进入上游前结束。"
+      },
+      {
+        "id": "control-plane",
+        "label": "控制面",
+        "focus": ["handle", "list", "builtin"],
+        "note": "discover/list 与内置工具不走 Governor。"
+      }
+    ]
+  },
+  "lanes": [
+    { "id": "agent", "label": "Agent HTTP" },
+    { "id": "frontend", "label": "HttpMcp" },
+    { "id": "pipeline", "label": "Pipeline" },
+    { "id": "policy", "label": "协议与切面", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "intake", "label": "接入", "fromCol": 0, "toCol": 1 },
+    { "id": "gate", "label": "校验 + 身份", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "dispatch", "label": "分流", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "groups": [
+    { "id": "header-gate", "label": "头与版本", "lane": "frontend", "fromCol": 1, "toCol": 2, "variant": "security" },
+    { "id": "call-path", "label": "tools/call", "lane": "pipeline", "fromCol": 4, "toCol": 5, "variant": "emphasis" }
+  ],
+  "mainPath": ["post", "parse", "headers", "auth", "handle", "call"],
+  "nodes": [
+    { "id": "post", "lane": "agent", "col": 0, "type": "external", "label": "POST /mcp", "sublabel": "Bearer + 头", "width": 132 },
+    { "id": "parse", "lane": "frontend", "col": 1, "type": "frontend", "label": "llhttp", "sublabel": "HTTP/1.1", "width": 132 },
+    { "id": "headers", "lane": "frontend", "col": 2, "type": "frontend", "label": "头校验", "sublabel": "2026-07-28", "tag": "-32022/-32020", "width": 132 },
+    { "id": "unknown", "lane": "policy", "col": 2, "type": "security", "label": "Method 404", "sublabel": "-32601", "width": 132 },
+    { "id": "auth", "lane": "policy", "col": 3, "type": "security", "label": "authenticate", "sublabel": "Principal", "width": 132 },
+    { "id": "handle", "lane": "pipeline", "col": 3, "type": "backend", "label": "Pipeline::handle", "sublabel": "方法分流", "width": 140 },
+    { "id": "list", "lane": "frontend", "col": 4, "type": "database", "label": "tools/list", "sublabel": "FacetView", "width": 132 },
+    { "id": "call", "lane": "pipeline", "col": 4, "type": "backend", "label": "handleCall", "sublabel": "治理后上游", "tag": "Permit", "width": 132 },
+    { "id": "deny", "lane": "policy", "col": 4, "type": "security", "label": "Deny/Unknown", "sublabel": "not allowed", "width": 132 },
+    { "id": "builtin", "lane": "pipeline", "col": 5, "type": "security", "label": "perfacet__*", "sublabel": "内置工具", "width": 132 },
+    { "id": "tasks", "lane": "frontend", "col": 5, "type": "messagebus", "label": "tasks/*", "sublabel": "get / cancel", "width": 132 }
+  ],
+  "edges": [
+    { "id": "post-parse", "from": "post", "to": "parse", "variant": "emphasis" },
+    { "id": "parse-headers", "from": "parse", "to": "headers", "label": "完整请求" },
+    { "id": "headers-unknown", "from": "headers", "to": "unknown", "label": "未知方法", "variant": "security", "role": "error" },
+    { "id": "headers-auth", "from": "headers", "to": "auth", "label": "头一致", "variant": "security" },
+    { "id": "auth-handle", "from": "auth", "to": "handle", "label": "ir::Request", "variant": "emphasis" },
+    { "id": "handle-call", "from": "handle", "to": "call", "label": "tools/call", "variant": "emphasis" },
+    { "id": "handle-list", "from": "handle", "to": "list", "label": "discover/list", "variant": "dashed" },
+    { "id": "call-builtin", "from": "call", "to": "builtin", "label": "backend=perfacet", "variant": "dashed" },
+    { "id": "list-tasks", "from": "list", "to": "tasks", "label": "tasks/get|cancel", "variant": "dashed" },
+    { "id": "call-deny", "from": "call", "to": "deny", "label": "不够格", "variant": "security", "role": "error" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Frontend 硬拒绝",
+      "items": [
+        "缺协议版本 → -32022；头与 body 不一致 → -32020",
+        "出现 Mcp-Session-Id / Last-Event-ID / notification → 直接 400"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "切面形状",
+      "items": [
+        "Unknown 给 secret 且不够格：目录里当不存在",
+        "Deny 给可见但不许调用；admin 无档位不能 request_elevation"
+      ]
+    }
+  ]
+}

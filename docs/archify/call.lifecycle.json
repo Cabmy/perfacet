@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Call 对象生命周期",
+    "locale": "zh-CN",
+    "output": "call-lifecycle.html",
+    "quality_profile": "showcase",
+    "viewBox": [1040, 700],
+    "views": [
+      {
+        "id": "main-rail",
+        "label": "主轨",
+        "focus": ["admit", "inflight", "upstream", "decide", "done"],
+        "note": "Permit 到手后插入 InFlight、打上游、按结果收尾。"
+      },
+      {
+        "id": "promote-wait",
+        "label": "长调用升格",
+        "focus": ["upstream", "promote", "cancelled"],
+        "note": "promoteAfterMs 到点：有 tasks 则返回 task 句柄，取消则放弃等待。"
+      },
+      {
+        "id": "retry-exit",
+        "label": "重试与退出",
+        "focus": ["decide", "retry", "unavailable"],
+        "note": "可恢复失败回 fireAttempt；熔断与 Down 是终点。"
+      }
+    ]
+  },
+  "lanes": [
+    { "id": "main", "label": "Call 主轨" },
+    { "id": "waiting", "label": "等待" },
+    { "id": "exceptions", "label": "恢复" },
+    { "id": "terminal", "label": "终点" }
+  ],
+  "states": [
+    { "id": "admit", "type": "start", "label": "Admit", "sublabel": "持有 Permit", "lane": "main", "col": 0, "step": "01", "tag": "entry" },
+    { "id": "inflight", "type": "active", "label": "InFlight", "sublabel": "insert + live_", "lane": "main", "col": 1, "step": "02", "tag": "合流键" },
+    { "id": "upstream", "type": "active", "label": "fireAttempt", "sublabel": "Backend::call", "lane": "main", "col": 2, "step": "03", "tag": "worker" },
+    { "id": "decide", "type": "decision", "label": "onUpstream", "sublabel": "重试或收尾", "lane": "main", "col": 3, "step": "04", "tag": "circuit" },
+    { "id": "done", "type": "success", "label": "respond", "sublabel": "~Call 归还", "lane": "main", "col": 4, "step": "05", "tag": "Permit" },
+    { "id": "promote", "type": "waiting", "label": "Promote", "sublabel": "MCP Task 句柄", "lane": "waiting", "col": 0, "tag": "tasks" },
+    { "id": "retry", "type": "failure", "label": "Retry", "sublabel": "shouldRetry", "lane": "exceptions", "col": 0, "yOffset": 78, "tag": "retryable" },
+    { "id": "cancelled", "type": "failure", "label": "Cancelled", "sublabel": "远端或仍在跑", "lane": "terminal", "col": 0, "tag": "terminal" },
+    { "id": "unavailable", "type": "failure", "label": "Unavailable", "sublabel": "熔断 / Down", "lane": "terminal", "col": 1, "tag": "terminal" }
+  ],
+  "transitions": [
+    { "id": "up-promote", "from": "upstream", "to": "promote", "variant": "default", "fromSide": "bottom", "toSide": "top", "route": "straight" },
+    { "id": "up-retry", "from": "upstream", "to": "retry", "variant": "security", "fromSide": "left", "toSide": "left", "via": [[320, 157], [320, 385]] },
+    { "id": "retry-up", "from": "retry", "to": "upstream", "variant": "emphasis", "fromSide": "left", "toSide": "top", "via": [[20, 385], [20, 80], [402, 80]] },
+    { "id": "promote-cancel", "from": "promote", "to": "cancelled", "variant": "security", "fromSide": "bottom", "toSide": "top", "via": [[480, 336], [480, 432], [402, 432]] },
+    { "id": "decide-unavail", "from": "decide", "to": "unavailable", "variant": "security", "route": "drop" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "唯一收尾点",
+      "items": [
+        "~Call 取消 promote 定时器、结束 upstream span、erase InFlight、归还 Permit",
+        "responded_ 保证 onDone 只走一次"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "升格",
+      "items": [
+        "Degraded 上游把 promoteAfterMs 减半",
+        "客户端未声明 tasks 扩展 → HTTP 400 / -32021"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "取消语义",
+      "items": [
+        "Cancelled = 网关放弃等待，不保证远端终止",
+        "drain 时 live_ 上每个 Call 走 cancelWait"
+      ]
+    }
+  ]
+}
