@@ -1,0 +1,1696 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "perfacet 网关启动与请求链路",
+    "locale": "zh-CN",
+    "output": "perfacet-architecture.html",
+    "quality_profile": "standard",
+    "viewBox": [
+      7200,
+      3400
+    ],
+    "views": [
+      {
+        "id": "boot-axis",
+        "label": "轴1 网关启动",
+        "focus": [
+          "main",
+          "run-cli",
+          "run-serve",
+          "yaml-config",
+          "event-loop",
+          "gateway",
+          "http-mcp",
+          "tcp-server",
+          "acceptor",
+          "probe-health"
+        ],
+        "note": "main → load → EventLoop → Gateway 成员序 → 探活 → bind/listen → loop"
+      },
+      {
+        "id": "request-axis",
+        "label": "轴2 请求主路径",
+        "focus": [
+          "acceptor",
+          "tcp-server",
+          "tcp-conn",
+          "http-mcp",
+          "session",
+          "pipeline",
+          "call",
+          "keepalive-post",
+          "ext-upstream"
+        ],
+        "note": "accept → HttpMcp → Pipeline::handleCall → Call → 上游 MCP → respond"
+      },
+      {
+        "id": "bypass-fail",
+        "label": "旁路与失败",
+        "focus": [
+          "http-mcp",
+          "session",
+          "ir-response",
+          "facet-view",
+          "probe-health",
+          "health-state",
+          "ext-sigint"
+        ],
+        "note": "healthz / list / HTTP 拒绝 / Down / SIGINT"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "main",
+      "type": "frontend",
+      "label": "main",
+      "sublabel": "进程入口",
+      "pos": [
+        280,
+        320
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "run-cli",
+      "type": "frontend",
+      "label": "runCli",
+      "sublabel": "解析子命令",
+      "pos": [
+        660,
+        320
+      ],
+      "size": [
+        176,
+        64
+      ],
+      "tag": "main_cli"
+    },
+    {
+      "id": "run-serve",
+      "type": "frontend",
+      "label": "runServe",
+      "sublabel": "装配后进入 loop",
+      "pos": [
+        1040,
+        320
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "yaml-config",
+      "type": "security",
+      "label": "YamlConfig",
+      "sublabel": "load 整份 YAML",
+      "pos": [
+        1420,
+        320
+      ],
+      "size": [
+        176,
+        64
+      ],
+      "tag": "失败抛错非0退出"
+    },
+    {
+      "id": "event-loop",
+      "type": "backend",
+      "label": "EventLoop",
+      "sublabel": "构造 + loop + Timer",
+      "pos": [
+        1800,
+        320
+      ],
+      "size": [
+        176,
+        64
+      ],
+      "tag": "runEvery / accept"
+    },
+    {
+      "id": "epoll",
+      "type": "backend",
+      "label": "Epoll",
+      "sublabel": "I/O 多路复用",
+      "pos": [
+        2560,
+        320
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "channel",
+      "type": "backend",
+      "label": "Channel",
+      "sublabel": "wakeup / timer fd",
+      "pos": [
+        2940,
+        320
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "gateway",
+      "type": "frontend",
+      "label": "Gateway",
+      "sublabel": "start / requestStop",
+      "pos": [
+        3320,
+        320
+      ],
+      "size": [
+        176,
+        64
+      ],
+      "tag": "按成员序组装"
+    },
+    {
+      "id": "thread-pool",
+      "type": "backend",
+      "label": "ThreadPool",
+      "sublabel": "workers_ 首成员",
+      "pos": [
+        3700,
+        320
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "yaml-identity",
+      "type": "security",
+      "label": "YamlIdentityStore",
+      "sublabel": "authenticate",
+      "pos": [
+        4080,
+        320
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "mem-task",
+      "type": "database",
+      "label": "MemTaskStore",
+      "sublabel": "insert / get / updateStatus",
+      "pos": [
+        280,
+        700
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "retry-policy",
+      "type": "security",
+      "label": "RetryPolicy",
+      "sublabel": "shouldRetry",
+      "pos": [
+        660,
+        700
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "count-circuit",
+      "type": "security",
+      "label": "CountCircuit",
+      "sublabel": "isOpen / onProbeSuccess",
+      "pos": [
+        1040,
+        700
+      ],
+      "size": [
+        176,
+        64
+      ],
+      "tag": "CState"
+    },
+    {
+      "id": "local-gov",
+      "type": "security",
+      "label": "LocalGovernor",
+      "sublabel": "acquire / onToolsListed",
+      "pos": [
+        1420,
+        700
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "counters",
+      "type": "backend",
+      "label": "Counters",
+      "sublabel": "计数 + Snap",
+      "pos": [
+        1800,
+        700
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "facet-view",
+      "type": "backend",
+      "label": "FacetView",
+      "sublabel": "listTools / visibilityFilter",
+      "pos": [
+        2560,
+        700
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "rank-policy",
+      "type": "security",
+      "label": "RankPolicy",
+      "sublabel": "authorizeCall",
+      "pos": [
+        2940,
+        700
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "tool-index",
+      "type": "database",
+      "label": "ToolIndex",
+      "sublabel": "replace 探活结果",
+      "pos": [
+        3320,
+        700
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "catalog",
+      "type": "backend",
+      "label": "Catalog",
+      "sublabel": "add 注册 backend",
+      "pos": [
+        3700,
+        700
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "jsonl-grant",
+      "type": "database",
+      "label": "JsonlGrantStore",
+      "sublabel": "setPost / refreshOnWorker / effectiveBump",
+      "pos": [
+        4080,
+        700
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "inflight",
+      "type": "database",
+      "label": "InFlight",
+      "sublabel": "lookup / insert / erase",
+      "pos": [
+        280,
+        1080
+      ],
+      "size": [
+        176,
+        64
+      ],
+      "tag": "Entry"
+    },
+    {
+      "id": "otlp-tracer",
+      "type": "backend",
+      "label": "OtlpHttpJsonTracer",
+      "sublabel": "start / set / end",
+      "pos": [
+        660,
+        1080
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "jsonl-audit",
+      "type": "database",
+      "label": "JsonlAuditLog",
+      "sublabel": "emit",
+      "pos": [
+        1040,
+        1080
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "probe-health",
+      "type": "security",
+      "label": "ProbeHealth",
+      "sublabel": "probeAllBlocking / state / startTimer",
+      "pos": [
+        1420,
+        1080
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "index-refresher",
+      "type": "backend",
+      "label": "IndexRefresher",
+      "sublabel": "setOnListed / onProbeResult",
+      "pos": [
+        1800,
+        1080
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "pipeline",
+      "type": "backend",
+      "label": "Pipeline",
+      "sublabel": "handle / handleCall / Deps",
+      "pos": [
+        2560,
+        1080
+      ],
+      "size": [
+        176,
+        64
+      ],
+      "tag": "handleBuiltin"
+    },
+    {
+      "id": "http-mcp",
+      "type": "frontend",
+      "label": "HttpMcp",
+      "sublabel": "startListen / onConn / onMessage",
+      "pos": [
+        2940,
+        1080
+      ],
+      "size": [
+        176,
+        64
+      ],
+      "tag": "wrapRpc / sendHttp"
+    },
+    {
+      "id": "http-mcp-backend",
+      "type": "backend",
+      "label": "HttpMcpBackend",
+      "sublabel": "call / callBlocking",
+      "pos": [
+        3320,
+        1080
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "tcp-server",
+      "type": "backend",
+      "label": "TcpServer",
+      "sublabel": "构造 / newConnection",
+      "pos": [
+        3700,
+        1080
+      ],
+      "size": [
+        176,
+        64
+      ],
+      "tag": "此处不 start"
+    },
+    {
+      "id": "acceptor",
+      "type": "backend",
+      "label": "Acceptor",
+      "sublabel": "bind + acceptConnection",
+      "pos": [
+        4080,
+        1080
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "task",
+      "type": "database",
+      "label": "Task",
+      "sublabel": "working / completed",
+      "pos": [
+        280,
+        1460
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "ext-otlp",
+      "type": "external",
+      "label": "OTLP collector",
+      "sublabel": "otelEndpoint",
+      "pos": [
+        660,
+        1460
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "ext-audit",
+      "type": "external",
+      "label": "audit.jsonl",
+      "sublabel": "审计日志文件",
+      "pos": [
+        1040,
+        1460
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "health-state",
+      "type": "security",
+      "label": "Health::State",
+      "sublabel": "Up / Degraded / Down",
+      "pos": [
+        1420,
+        1460
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "session",
+      "type": "frontend",
+      "label": "Session",
+      "sublabel": "onConn 会话态",
+      "pos": [
+        2940,
+        1460
+      ],
+      "size": [
+        176,
+        64
+      ],
+      "tag": "匿名命名空间"
+    },
+    {
+      "id": "ir-request",
+      "type": "backend",
+      "label": "Request",
+      "sublabel": "method / who / caps / trace",
+      "pos": [
+        2560,
+        1460
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "keepalive-post",
+      "type": "backend",
+      "label": "KeepAlivePost",
+      "sublabel": "keepAlivePost",
+      "pos": [
+        3320,
+        1460
+      ],
+      "size": [
+        176,
+        64
+      ],
+      "tag": "thread_local"
+    },
+    {
+      "id": "tcp-conn",
+      "type": "backend",
+      "label": "TcpConnection",
+      "sublabel": "attachToLoop / send",
+      "pos": [
+        3700,
+        1460
+      ],
+      "size": [
+        176,
+        64
+      ],
+      "tag": "handleRead"
+    },
+    {
+      "id": "socket",
+      "type": "backend",
+      "label": "Socket",
+      "sublabel": "bind / listen",
+      "pos": [
+        4080,
+        1460
+      ],
+      "size": [
+        176,
+        64
+      ],
+      "tag": "失败抛错"
+    },
+    {
+      "id": "call",
+      "type": "backend",
+      "label": "Call",
+      "sublabel": "startUpstream / fireAttempt / respond",
+      "pos": [
+        2560,
+        1840
+      ],
+      "size": [
+        176,
+        64
+      ],
+      "tag": "onUpstream / erase InFlight"
+    },
+    {
+      "id": "ir-response",
+      "type": "backend",
+      "label": "Response",
+      "sublabel": "body / klass / httpStatus",
+      "pos": [
+        2940,
+        1840
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "ext-upstream",
+      "type": "external",
+      "label": "上游 MCP",
+      "sublabel": "HTTP tools/call · tools/list",
+      "pos": [
+        3320,
+        1840
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "buffer",
+      "type": "backend",
+      "label": "Buffer",
+      "sublabel": "readFd",
+      "pos": [
+        3700,
+        1840
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "family",
+      "type": "backend",
+      "label": "Family",
+      "sublabel": "地址族",
+      "pos": [
+        4080,
+        1840
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "failure-class",
+      "type": "backend",
+      "label": "FailureClass",
+      "sublabel": "classify 上游结果",
+      "pos": [
+        2560,
+        2220
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "backend-call",
+      "type": "backend",
+      "label": "BackendCall",
+      "sublabel": "makeBackendCall",
+      "pos": [
+        2940,
+        2220
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "tool-key",
+      "type": "backend",
+      "label": "ToolKey",
+      "sublabel": "parse / str",
+      "pos": [
+        1800,
+        2220
+      ],
+      "size": [
+        176,
+        64
+      ],
+      "tag": "backend__tool"
+    },
+    {
+      "id": "endpoint",
+      "type": "backend",
+      "label": "Endpoint",
+      "sublabel": "host:port",
+      "pos": [
+        4080,
+        2220
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "ext-yaml",
+      "type": "external",
+      "label": "YAML 配置文件",
+      "sublabel": "listen / agents / backends",
+      "pos": [
+        1420,
+        130
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "ext-sigint",
+      "type": "external",
+      "label": "SIGINT",
+      "sublabel": "进程信号",
+      "pos": [
+        3320,
+        130
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "ext-grants",
+      "type": "external",
+      "label": "grants.jsonl",
+      "sublabel": "Grant 持久化",
+      "pos": [
+        4080,
+        130
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "taxonomy",
+      "type": "security",
+      "label": "Taxonomy",
+      "sublabel": "load 内建档位",
+      "pos": [
+        5220,
+        320
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "agent-cfg",
+      "type": "security",
+      "label": "AgentCfg",
+      "sublabel": "id / token / level",
+      "pos": [
+        5600,
+        320
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "backend-cfg",
+      "type": "security",
+      "label": "BackendCfg",
+      "sublabel": "name / url / meta",
+      "pos": [
+        5980,
+        320
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "gov-tool-cfg",
+      "type": "security",
+      "label": "GovernorToolCfg",
+      "sublabel": "maxConcurrency",
+      "pos": [
+        6360,
+        320
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "catalog-entry",
+      "type": "database",
+      "label": "CatalogEntry",
+      "sublabel": "backend + BackendMeta",
+      "pos": [
+        5220,
+        480
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "indexed-tool",
+      "type": "database",
+      "label": "IndexedTool",
+      "sublabel": "ToolIndex 条目",
+      "pos": [
+        5600,
+        480
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "principal",
+      "type": "security",
+      "label": "Principal",
+      "sublabel": "AuthenticatedPrincipal",
+      "pos": [
+        5980,
+        480
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "decision",
+      "type": "security",
+      "label": "Decision",
+      "sublabel": "Allow / Deny / Unknown",
+      "pos": [
+        6360,
+        480
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "grant-record",
+      "type": "database",
+      "label": "GrantRecord",
+      "sublabel": "bumpTo / expiresAt",
+      "pos": [
+        5220,
+        640
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "grant-table",
+      "type": "database",
+      "label": "GrantTable",
+      "sublabel": "byId 快照",
+      "pos": [
+        5600,
+        640
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "client-caps",
+      "type": "backend",
+      "label": "ClientCaps",
+      "sublabel": "客户端能力",
+      "pos": [
+        5980,
+        640
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "trace-ctx",
+      "type": "backend",
+      "label": "TraceContext",
+      "sublabel": "traceId / spanId",
+      "pos": [
+        6360,
+        640
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "backend-meta",
+      "type": "backend",
+      "label": "BackendMeta",
+      "sublabel": "level / secret / idempotent",
+      "pos": [
+        5220,
+        800
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "ifc-policy",
+      "type": "security",
+      "label": "Policy",
+      "sublabel": "authorizeCall / visibilityFilter",
+      "pos": [
+        5600,
+        800
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "ifc-backend",
+      "type": "backend",
+      "label": "Backend",
+      "sublabel": "call(BackendCall)",
+      "pos": [
+        5980,
+        800
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "ifc-governor",
+      "type": "security",
+      "label": "Governor",
+      "sublabel": "acquire / releaseSlot",
+      "pos": [
+        6360,
+        800
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "ifc-health",
+      "type": "security",
+      "label": "Health",
+      "sublabel": "state / latencyEwmaMs",
+      "pos": [
+        5220,
+        960
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "ifc-tracer",
+      "type": "backend",
+      "label": "Tracer",
+      "sublabel": "start / set / end",
+      "pos": [
+        5600,
+        960
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "gov-admit",
+      "type": "security",
+      "label": "Governor::Admit",
+      "sublabel": "Go / Queue / Reject",
+      "pos": [
+        5980,
+        960
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "gov-permit",
+      "type": "security",
+      "label": "Governor::Permit",
+      "sublabel": "RAII 归还",
+      "pos": [
+        6360,
+        960
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "waiter",
+      "type": "security",
+      "label": "Waiter",
+      "sublabel": "LocalGovernor 排队",
+      "pos": [
+        5220,
+        1120
+      ],
+      "size": [
+        176,
+        64
+      ]
+    },
+    {
+      "id": "audit-event",
+      "type": "database",
+      "label": "AuditEvent",
+      "sublabel": "审计事件",
+      "pos": [
+        5600,
+        1120
+      ],
+      "size": [
+        176,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "轴1 · 启动入口",
+      "wraps": [
+        "main",
+        "run-cli",
+        "run-serve",
+        "yaml-config",
+        "ext-yaml"
+      ],
+      "pad": 28
+    },
+    {
+      "kind": "region",
+      "label": "契约 / 配置 / IR",
+      "wraps": [
+        "taxonomy",
+        "agent-cfg",
+        "backend-cfg",
+        "gov-tool-cfg",
+        "catalog-entry",
+        "indexed-tool",
+        "principal",
+        "decision",
+        "grant-record",
+        "grant-table",
+        "client-caps",
+        "trace-ctx",
+        "backend-meta",
+        "ifc-policy",
+        "ifc-backend",
+        "ifc-governor",
+        "ifc-health",
+        "ifc-tracer",
+        "gov-admit",
+        "gov-permit",
+        "waiter",
+        "audit-event"
+      ],
+      "pad": 24
+    }
+  ],
+  "connections": [
+    {
+      "id": "boot-main-cli",
+      "from": "main",
+      "to": "run-cli",
+      "label": "main",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-cli-serve",
+      "from": "run-cli",
+      "to": "run-serve",
+      "label": "runCli",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-serve-yaml",
+      "from": "run-serve",
+      "to": "yaml-config",
+      "label": "load",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-yaml-loop",
+      "from": "yaml-config",
+      "to": "event-loop",
+      "label": "EventLoop",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-loop-epoll",
+      "from": "event-loop",
+      "to": "epoll",
+      "label": "Epoll",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-epoll-ch",
+      "from": "epoll",
+      "to": "channel",
+      "label": "timer Channel",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-ch-gw",
+      "from": "channel",
+      "to": "gateway",
+      "label": "Gateway()",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-gw-pool",
+      "from": "gateway",
+      "to": "thread-pool",
+      "label": "ThreadPool",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-pool-id",
+      "from": "thread-pool",
+      "to": "yaml-identity",
+      "label": "IdentityStore",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-file-yaml",
+      "from": "ext-yaml",
+      "to": "yaml-config",
+      "label": "读文件",
+      "labelDx": 54,
+      "labelDy": 40
+    },
+    {
+      "id": "boot-sigint",
+      "from": "ext-sigint",
+      "to": "gateway",
+      "label": "requestStop",
+      "variant": "dashed",
+      "labelDx": 54,
+      "labelDy": 40
+    },
+    {
+      "id": "boot-grants-file",
+      "from": "ext-grants",
+      "to": "yaml-identity",
+      "label": "grantsPath",
+      "variant": "dashed",
+      "labelDx": 54,
+      "labelDy": 40
+    },
+    {
+      "id": "boot-id-grant",
+      "from": "yaml-identity",
+      "to": "jsonl-grant",
+      "label": "GrantStore",
+      "labelDx": 54,
+      "labelDy": 40
+    },
+    {
+      "id": "boot-grant-cat",
+      "from": "jsonl-grant",
+      "to": "catalog",
+      "label": "Catalog",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-cat-idx",
+      "from": "catalog",
+      "to": "tool-index",
+      "label": "ToolIndex",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-idx-pol",
+      "from": "tool-index",
+      "to": "rank-policy",
+      "label": "RankPolicy",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-pol-facet",
+      "from": "rank-policy",
+      "to": "facet-view",
+      "label": "FacetView",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-facet-ctr",
+      "from": "facet-view",
+      "to": "counters",
+      "label": "Counters",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-ctr-gov",
+      "from": "counters",
+      "to": "local-gov",
+      "label": "Governor",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-gov-ckt",
+      "from": "local-gov",
+      "to": "count-circuit",
+      "label": "Circuit",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-ckt-retry",
+      "from": "count-circuit",
+      "to": "retry-policy",
+      "label": "RetryPolicy",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-retry-task",
+      "from": "retry-policy",
+      "to": "mem-task",
+      "label": "TaskStore",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-task-inf",
+      "from": "mem-task",
+      "to": "inflight",
+      "label": "InFlight",
+      "labelDx": 54,
+      "labelDy": 40
+    },
+    {
+      "id": "boot-inf-tr",
+      "from": "inflight",
+      "to": "otlp-tracer",
+      "label": "OtlpTracer",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-tr-audit",
+      "from": "otlp-tracer",
+      "to": "jsonl-audit",
+      "label": "JsonlAuditLog",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-audit-hp",
+      "from": "jsonl-audit",
+      "to": "probe-health",
+      "label": "ProbeHealth",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-hp-ref",
+      "from": "probe-health",
+      "to": "index-refresher",
+      "label": "Refresher",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-ref-pipe",
+      "from": "index-refresher",
+      "to": "pipeline",
+      "label": "Pipeline(Deps)",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-pipe-http",
+      "from": "pipeline",
+      "to": "http-mcp",
+      "label": "HttpMcp 构造",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-http-be",
+      "from": "http-mcp",
+      "to": "http-mcp-backend",
+      "label": "backend",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-be-srv",
+      "from": "http-mcp-backend",
+      "to": "tcp-server",
+      "label": "startListen",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-srv-acc",
+      "from": "tcp-server",
+      "to": "acceptor",
+      "label": "Acceptor",
+      "labelDy": -50
+    },
+    {
+      "id": "boot-acc-sock",
+      "from": "acceptor",
+      "to": "socket",
+      "label": "bind/listen",
+      "labelDx": 54,
+      "labelDy": 40
+    },
+    {
+      "id": "boot-be-ka",
+      "from": "http-mcp-backend",
+      "to": "keepalive-post",
+      "label": "keepAlivePost",
+      "labelDx": 54,
+      "labelDy": 40
+    },
+    {
+      "id": "boot-idx-be",
+      "from": "tool-index",
+      "to": "http-mcp-backend",
+      "label": "Catalog::add",
+      "labelDx": 54,
+      "labelDy": 40
+    },
+    {
+      "id": "wire-ref-gov",
+      "from": "index-refresher",
+      "to": "local-gov",
+      "label": "onToolsListed",
+      "variant": "dashed",
+      "labelDy": -50
+    },
+    {
+      "id": "wire-hp-ckt",
+      "from": "probe-health",
+      "to": "count-circuit",
+      "label": "onProbeSuccess",
+      "variant": "dashed",
+      "labelDy": -50
+    },
+    {
+      "id": "wire-hp-state",
+      "from": "probe-health",
+      "to": "health-state",
+      "label": "记 Down",
+      "variant": "dashed",
+      "labelDx": 54,
+      "labelDy": 40
+    },
+    {
+      "id": "req-acc-srv",
+      "from": "acceptor",
+      "to": "tcp-server",
+      "label": "newConnection",
+      "variant": "emphasis",
+      "labelDy": -50
+    },
+    {
+      "id": "req-srv-conn",
+      "from": "tcp-server",
+      "to": "tcp-conn",
+      "label": "attachToLoop",
+      "variant": "emphasis",
+      "labelDx": 54,
+      "labelDy": 40
+    },
+    {
+      "id": "req-conn-buf",
+      "from": "tcp-conn",
+      "to": "buffer",
+      "label": "readFd",
+      "variant": "emphasis",
+      "labelDx": 54,
+      "labelDy": 40
+    },
+    {
+      "id": "req-http-sess",
+      "from": "http-mcp",
+      "to": "session",
+      "label": "Session",
+      "variant": "emphasis",
+      "labelDx": 54,
+      "labelDy": 40
+    },
+    {
+      "id": "req-sess-rsp",
+      "from": "session",
+      "to": "ir-response",
+      "label": "HTTP 拒绝",
+      "variant": "dashed",
+      "labelDx": 54,
+      "labelDy": 40
+    },
+    {
+      "id": "req-ir-pipe",
+      "from": "ir-request",
+      "to": "pipeline",
+      "label": "handle",
+      "variant": "emphasis",
+      "labelDx": 54,
+      "labelDy": -40
+    },
+    {
+      "id": "req-pipe-pol",
+      "from": "pipeline",
+      "to": "rank-policy",
+      "label": "authorizeCall",
+      "variant": "emphasis",
+      "labelDy": -50
+    },
+    {
+      "id": "req-pipe-call",
+      "from": "ir-request",
+      "to": "call",
+      "label": "handleCall",
+      "variant": "emphasis",
+      "labelDx": 54,
+      "labelDy": 40
+    },
+    {
+      "id": "req-gov-ckt",
+      "from": "local-gov",
+      "to": "count-circuit",
+      "label": "isOpen",
+      "variant": "emphasis",
+      "labelDy": -50
+    },
+    {
+      "id": "req-ckt-hp",
+      "from": "count-circuit",
+      "to": "probe-health",
+      "label": "state",
+      "variant": "emphasis",
+      "labelDy": -50
+    },
+    {
+      "id": "req-call-rsp",
+      "from": "call",
+      "to": "ir-response",
+      "label": "respond",
+      "variant": "emphasis",
+      "labelDy": -50
+    },
+    {
+      "id": "req-call-fail",
+      "from": "call",
+      "to": "failure-class",
+      "label": "classify",
+      "variant": "emphasis",
+      "labelDx": 54,
+      "labelDy": 40
+    },
+    {
+      "id": "req-call-bc",
+      "from": "call",
+      "to": "backend-call",
+      "label": "makeBackendCall",
+      "variant": "dashed",
+      "labelDy": -50
+    },
+    {
+      "id": "req-sess-bc",
+      "from": "ir-response",
+      "to": "backend-call",
+      "label": "httpStatus",
+      "variant": "dashed",
+      "labelDx": 54,
+      "labelDy": 40
+    },
+    {
+      "id": "req-ka-up",
+      "from": "keepalive-post",
+      "to": "ext-upstream",
+      "label": "HTTP POST",
+      "variant": "emphasis",
+      "labelDx": 54,
+      "labelDy": 40
+    },
+    {
+      "id": "req-be-ka",
+      "from": "keepalive-post",
+      "to": "http-mcp-backend",
+      "label": "callBlocking",
+      "variant": "emphasis",
+      "labelDx": 54,
+      "labelDy": -40
+    },
+    {
+      "id": "req-retry-task",
+      "from": "retry-policy",
+      "to": "mem-task",
+      "label": "若 task",
+      "variant": "emphasis",
+      "labelDy": -50
+    },
+    {
+      "id": "req-pipe-facet",
+      "from": "pipeline",
+      "to": "facet-view",
+      "label": "tools/list",
+      "variant": "dashed",
+      "labelDx": 54,
+      "labelDy": -40
+    },
+    {
+      "id": "req-pipe-tr",
+      "from": "pipeline",
+      "to": "index-refresher",
+      "label": "邻近",
+      "variant": "dashed",
+      "labelDy": -50
+    },
+    {
+      "id": "req-tr-otlp",
+      "from": "otlp-tracer",
+      "to": "ext-otlp",
+      "label": "OTLP/HTTP",
+      "labelDx": 54,
+      "labelDy": 40
+    },
+    {
+      "id": "req-audit-file",
+      "from": "jsonl-audit",
+      "to": "ext-audit",
+      "label": "emit",
+      "labelDx": 54,
+      "labelDy": 40
+    },
+    {
+      "id": "sock-family",
+      "from": "socket",
+      "to": "family",
+      "label": "Family",
+      "labelDx": 54,
+      "labelDy": 40
+    },
+    {
+      "id": "family-ep",
+      "from": "family",
+      "to": "endpoint",
+      "label": "Endpoint",
+      "labelDx": 54,
+      "labelDy": 40
+    },
+    {
+      "id": "by-healthz",
+      "from": "http-mcp",
+      "to": "rank-policy",
+      "label": "GET /healthz",
+      "variant": "dashed",
+      "labelDx": 54,
+      "labelDy": -40
+    },
+    {
+      "id": "by-list",
+      "from": "facet-view",
+      "to": "rank-policy",
+      "label": "visibilityFilter",
+      "variant": "dashed",
+      "labelDy": -50
+    },
+    {
+      "id": "by-upst",
+      "from": "probe-health",
+      "to": "index-refresher",
+      "label": "upstream_status",
+      "variant": "dashed",
+      "labelDy": -50
+    },
+    {
+      "id": "req-inf-task",
+      "from": "inflight",
+      "to": "task",
+      "label": "Task",
+      "variant": "dashed",
+      "labelDx": 54,
+      "labelDy": 40
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "轴1 · 网关启动",
+      "items": [
+        "main → runCli → runServe → YamlConfig::load（内建 Taxonomy）；失败抛错，进程非 0 退出",
+        "EventLoop 构造 Epoll 与 wakeup/timer Channel，再按成员序组装 Gateway 至 Pipeline(Deps)",
+        "接线：setPost、HttpMcpBackend+Catalog::add、setOnListed、setCallback、setOnExpire；HttpMcp 构造不 listen",
+        "start：refreshOnWorker → probeAllBlocking（失败记 Down 不抛）→ startListen 里 Acceptor/Socket::bind/listen → startTimer + runEvery → loop"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "轴2 · POST /mcp tools/call",
+      "items": [
+        "EventLoop::loop → acceptConnection → newConnection → attachToLoop → onConn(Session) → readFd → onMessage(llhttp)",
+        "Origin/Bearer + authenticate + effectiveBump 组装 ir::Request，Pipeline::handle 开 tracer span",
+        "handleCall：parse → authorizeCall → lookup → acquire → isOpen/state → insert → Call::startUpstream/fireAttempt",
+        "worker keepAlivePost → classify → queueInLoop → onUpstream → shouldRetry → 可选 MemTaskStore → respond → erase + Permit 归还 → sendHttp"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "旁路与失败",
+      "items": [
+        "HttpMcp 短支：GET /healthz、GET /upstreams、Origin 403、401 auth_fail、非 /mcp 404（图中经 Session → Response）",
+        "Pipeline 短支：tools/list（FacetView + visibilityFilter + shortestRemainingMs）、server/discover、tasks/get、tasks/cancel、handleBuiltin",
+        "执行短支：InFlight hit、Admit::Reject、circuit OPEN、health Down、promote/attachTask",
+        "SIGINT → Gateway::requestStop；bind/listen 失败抛错"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "右区值类型与测试夹具",
+      "items": [
+        "右侧集群列出接口 Policy/Backend/Governor/Health/Tracer 与 AgentCfg、GrantRecord、Permit、Waiter 等值类型",
+        "不画 PrincipalForge、NullTracer、StubHealth、CountingBackend、HoldingBackend、CountingGovernor、PipeEnv"
+      ]
+    }
+  ]
+}

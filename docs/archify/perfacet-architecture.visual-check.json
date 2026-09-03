@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "visual-check",
+  "evidenceKind": "automated-browser",
+  "status": "fail",
+  "visualReview": "pending",
+  "artifact": {
+    "path": "/home/cabmy/Desktop/cppServerLearning/perfacet/docs/archify/perfacet-architecture.html",
+    "sha256": "e42ae92e5f39ef7a70d9b1d2368b4753d380e127e08e48b13f2ea318c6b77796",
+    "bytes": 830580
+  },
+  "state": {
+    "detail": "read",
+    "motion": "still"
+  },
+  "chrome": {
+    "status": "available",
+    "executable": "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe"
+  },
+  "diagnostics": [
+    {
+      "code": "viewer/visual-check-runtime",
+      "severity": "error",
+      "message": "visual-check could not complete its Chrome inspection.",
+      "subject": {
+        "artifact": "/home/cabmy/Desktop/cppServerLearning/perfacet/docs/archify/perfacet-architecture.html"
+      },
+      "evidence": {
+        "reason": "Chrome DevTools write pipe failed: read ECONNRESET [ECONNRESET]\nChrome process: still running.\nChrome stderr:\n<3>WSL (25008 - ) ERROR: UtilGetPpid:1330: Failed to parse: /proc/1/stat, content: 1 (systemd) S 0 1 1 0 -1 4194560 7939 165792 11 425 35 49 568 305 20 0 1 0 115 22454272 3113 18446744073709551615 1 1 0 0 0 0 671173123 4096 1260 0 0 0 17 13 0 0 0 0 0 0 0 0 0 0 0 0 0\n<3>WSL (25008 - ) ERROR: UtilConnectUnix:535: connect failed 2"
+      },
+      "supportedFixes": [
+        "resolve the reported Chrome inspection error, then rerun visual-check"
+      ]
+    }
+  ],
+  "containment": {
+    "status": "fail",
+    "viewports": []
+  },
+  "readability": {
+    "status": "fail",
+    "minimumProjectedNodeTextPx": 6,
+    "viewports": []
+  },
+  "viewerChrome": {
+    "status": "fail",
+    "viewports": []
+  },
+  "captures": {
+    "status": "fail",
+    "screenshots": [],
+    "contactSheet": null
+  },
+  "sidecars": {
+    "receipt": "perfacet-architecture.visual-check.json",
+    "contactSheet": "perfacet-architecture.visual-check.html"
+  },
+  "error": "Chrome DevTools write pipe failed: read ECONNRESET [ECONNRESET]\nChrome process: still running.\nChrome stderr:\n<3>WSL (25008 - ) ERROR: UtilGetPpid:1330: Failed to parse: /proc/1/stat, content: 1 (systemd) S 0 1 1 0 -1 4194560 7939 165792 11 425 35 49 568 305 20 0 1 0 115 22454272 3113 18446744073709551615 1 1 0 0 0 0 671173123 4096 1260 0 0 0 17 13 0 0 0 0 0 0 0 0 0 0 0 0 0\n<3>WSL (25008 - ) ERROR: UtilConnectUnix:535: connect failed 2"
+}
