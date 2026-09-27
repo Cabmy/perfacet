@@ -11,6 +11,8 @@ inline constexpr const char* kMetaProtocol =
 inline constexpr const char* kMetaCaps =
     "io.modelcontextprotocol/clientCapabilities";
 inline constexpr const char* kConfirmKey = "perfacet/confirm";
+// 下游每请求超时（ms）；缺省则用网关默认。仅看本请求 _meta。
+inline constexpr const char* kMetaTimeoutMs = "perfacet/timeout_ms";
 
 struct ClientCaps {
     bool tasks = false;

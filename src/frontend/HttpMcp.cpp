@@ -473,7 +473,12 @@ void HttpMcp::onMessage(const netlib::TcpConnectionPtr& conn, netlib::Buffer& bu
     req.idJson = id;
     req.params = params;
     req.meta = meta;
-    req.deadlineMs = nowMs() + 60000;
+    uint64_t timeoutMs = 60000; // 网关默认
+    if (meta.contains(ir::kMetaTimeoutMs) && meta[ir::kMetaTimeoutMs].is_number_integer()) {
+        const int64_t v = meta[ir::kMetaTimeoutMs].get<int64_t>();
+        if (v > 0) timeoutMs = static_cast<uint64_t>(v); // 下游决定
+    }
+    req.deadlineMs = nowMs() + timeoutMs;
     if (meta.contains(ir::kMetaCaps) && meta[ir::kMetaCaps].is_object()) {
         auto caps = meta[ir::kMetaCaps];
         if (caps.contains("extensions") && caps["extensions"].is_object() &&
